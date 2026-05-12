@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 محلل الأسهم الذكي</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 المحلل الفني الذكي</h1>
+            <p>تحليل فني متقدم للأسهم الأمريكية والسعودية</p>
+        </header>
+
+        <div class="search-box">
+            <input type="text" id="symbolInput" placeholder="أدخل رمز السهم (مثال: AAPL, 2222, TSLA)">
+            <button onclick="searchStock()">🔍 تحليل</button>
+        </div>
+
+        <div class="market-tabs">
+            <button class="tab active" onclick="switchMarket('all')">الكل</button>
+            <button class="tab" onclick="switchMarket('saudi')">🇸🇦 السعودي</button>
+            <button class="tab" onclick="switchMarket('us')">🇺🇸 الأمريكي</button>
+        </div>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>جاري التحليل...</p>
+        </div>
+
+        <div id="result" class="result hidden"></div>
+
+        <div id="marketOverview" class="market-overview">
+            <h2>نظرة عامة على الأسواق</h2>
+            <div class="markets-grid" id="marketsGrid"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
