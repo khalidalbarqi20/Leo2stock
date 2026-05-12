@@ -42,26 +42,10 @@ def search_stock():
         return jsonify(cached)
     data = fetcher.get_stock_data(query, market)
     if data:
-        indicators = analyzer.calculate_all(data['prices'])
-        result = {
-            'symbol': data['symbol'],
-            'name': data['name'],
-            'market': data['market'],
-            'current': data['current'],
-            'change': data['change'],
-            'open': data['open'],
-            'high': data['high'],
-            'low': data['low'],
-            'previous_close': data['previous_close'],
-            'volume': data['volume'],
-            'avg_volume': data['avg_volume'],
-            'high_52w': data['high_52w'],
-            'low_52w': data['low_52w'],
-            'currency': data['currency'],
-            'indicators': indicators
-        }
-        set_cached_data(query, result)
-        return jsonify(result)
+        data_json = fetcher.prepare_json(data)
+        data_json['indicators'] = analyzer.calculate_all(data['prices'])
+        set_cached_data(query, data_json)
+        return jsonify(data_json)
     return jsonify({'error': 'لم يتم العثور على السهم'})
 
 @app.route('/api/analyze/<symbol>')
@@ -71,31 +55,27 @@ def analyze_stock(symbol):
     if not data:
         return jsonify({'error': 'بيانات غير متوفرة'})
 
-    try:
-        analysis = analyzer.full_analysis(data['prices'])
-        recommendation = analyzer.get_recommendation(analysis)
+    analysis = analyzer.full_analysis(data['prices'])
+    recommendation = analyzer.get_recommendation(analysis)
 
-        return jsonify({
-            'symbol': data['symbol'],
-            'name': data['name'],
-            'market': data['market'],
-            'current': data['current'],
-            'change': data['change'],
-            'open': data['open'],
-            'high': data['high'],
-            'low': data['low'],
-            'previous_close': data['previous_close'],
-            'volume': data['volume'],
-            'avg_volume': data['avg_volume'],
-            'high_52w': data['high_52w'],
-            'low_52w': data['low_52w'],
-            'currency': data['currency'],
-            'analysis': analysis,
-            'recommendation': recommendation
-        })
-    except Exception as e:
-        print(f"Error analyzing {symbol}: {e}")
-        return jsonify({'error': f'خطأ في التحليل: {str(e)}'})
+    result = fetcher.prepare_json(data)
+    result['analysis'] = analysis
+    result['recommendation'] = recommendation
+
+    # Chart series data
+    chart_data = fetcher.get_chart_series(data['prices'])
+    result.update(chart_data)
+
+    return jsonify(result)
+
+@app.route('/api/chart-data/<symbol>')
+def chart_data(symbol):
+    period = request.args.get('period', '6mo')
+    market = 'saudi' if symbol.isdigit() else 'us'
+    data = fetcher.get_stock_data(symbol, market, period=period)
+    if not data:
+        return jsonify({'error': 'بيانات غير متوفرة'})
+    return jsonify(fetcher.get_chart_series(data['prices']))
 
 @app.route('/api/report/<symbol>')
 def generate_report(symbol):
@@ -103,14 +83,11 @@ def generate_report(symbol):
     data = fetcher.get_stock_data(symbol, market)
     if not data:
         return jsonify({'error': 'بيانات غير متوفرة'})
-    try:
-        analysis = analyzer.full_analysis(data['prices'])
-        pdf_path = reporter.generate_pdf(symbol, data, analysis)
-        return send_file(pdf_path, as_attachment=True,
-                         download_name=f'{symbol}_analysis_{datetime.now().strftime("%Y%m%d")}.pdf')
-    except Exception as e:
-        print(f"Error generating report {symbol}: {e}")
-        return jsonify({'error': f'خطأ في إنشاء التقرير: {str(e)}'})
+    analysis = analyzer.full_analysis(data['prices'])
+    analysis['recommendation'] = analyzer.get_recommendation(analysis)
+    pdf_path = reporter.generate_pdf(symbol, fetcher.prepare_json(data), analysis)
+    return send_file(pdf_path, as_attachment=True,
+                     download_name=f'{symbol}_analysis_{datetime.now().strftime("%Y%m%d")}.pdf')
 
 @app.route('/api/market-overview')
 def market_overview():
@@ -122,18 +99,14 @@ def market_overview():
     for market, syms in symbols.items():
         overview[market] = []
         for sym in syms:
-            try:
-                data = fetcher.get_stock_data(sym, market)
-                if data:
-                    overview[market].append({
-                        'symbol': data['symbol'],
-                        'price': data['current'],
-                        'change': data['change'],
-                        'name': data.get('name', sym)
-                    })
-            except Exception as e:
-                print(f"Error in market overview for {sym}: {e}")
-                continue
+            data = fetcher.get_stock_data(sym, market)
+            if data:
+                overview[market].append({
+                    'symbol': data['symbol'],
+                    'price': data['current'],
+                    'change': data['change'],
+                    'name': data.get('name', sym)
+                })
     return jsonify(overview)
 
 if __name__ == '__main__':
