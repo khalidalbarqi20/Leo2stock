@@ -1,32 +1,38 @@
 import yfinance as yf
 import pandas as pd
 import time
-import random
 from datetime import datetime
 import requests
 
-# نظام ذاكرة مؤقتة لتقليل الطلبات تماماً
+# نظام ذاكرة مؤقتة لتقليل الطلبات وحماية الـ IP من الحظر
 _cache = {}
-CACHE_EXPIRY = 600 
+CACHE_EXPIRY = 900  # 15 دقيقة (مدة أطول لاستقرار أكثر)
 
 class StockDataFetcher:
     def __init__(self):
-        # إنشاء جلسة متطورة لتجاوز حظر ياهو
+        # أهم جزء: إنشاء جلسة تحاكي متصفح حقيقي لتجنب خطأ 429 و Expecting value
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://finance.yahoo.com/'
         })
 
     def get_stock_data(self, symbol, market='us', period='6mo'):
-        # تحويل الرمز تلقائياً (رقمي -> سعودي)
+        # 1. معالجة الرموز تلقائياً (رقمي -> سعودي)
         s_str = str(symbol).strip()
-        yahoo_symbol = f"{s_str}.SR" if s_str.isdigit() else s_str.upper()
-        if not s_str.isdigit() and not s_str.upper().endswith('.SR') and market == 'saudi':
-             yahoo_symbol = f"{s_str.upper()}.SR"
+        if s_str.isdigit():
+            yahoo_symbol = f"{s_str}.SR"
+            market = 'saudi'
+        elif s_str.upper().endswith('.SR'):
+            yahoo_symbol = s_str.upper()
+            market = 'saudi'
+        else:
+            yahoo_symbol = s_str.upper()
+            market = 'us'
 
-        # فحص الكاش للاستجابة الفورية
+        # 2. فحص الكاش للاستجابة الفورية دون طلب بيانات جديدة
         now = time.time()
         if yahoo_symbol in _cache:
             data, timestamp = _cache[yahoo_symbol]
@@ -34,18 +40,16 @@ class StockDataFetcher:
                 return data
 
         try:
-            # استخدام الجلسة المخصصة مع yfinance لتجنب خطأ 429
+            # 3. جلب البيانات باستخدام الجلسة المخصصة (حل مشكلة Line 1 Column 1)
             ticker = yf.Ticker(yahoo_symbol, session=self.session)
             
-            # جلب البيانات التاريخية (الأساس للرسم البياني والمؤشرات)
+            # نطلب التاريخ أولاً (أقل عرضة للحظر من طلب الـ Info)
             hist = ticker.history(period=period, interval="1d")
             
             if hist.empty:
-                # محاولة أخيرة بمدة أقل لتجنب الحظر
-                hist = ticker.history(period="1mo", interval="1d")
-                if hist.empty: return None
+                return None
 
-            # جلب المعلومات الأساسية مع معالجة فشل التجاوب
+            # محاولة جلب معلومات السهم (Info) مع معالجة الفشل
             try:
                 info = ticker.info
             except:
@@ -54,7 +58,7 @@ class StockDataFetcher:
             current = hist['Close'].iloc[-1]
             prev = hist['Close'].iloc[-2]
             
-            data_res = {
+            stock_results = {
                 'symbol': yahoo_symbol,
                 'name': info.get('longName') or info.get('shortName') or yahoo_symbol,
                 'current': round(current, 2),
@@ -64,35 +68,30 @@ class StockDataFetcher:
                 'low': round(hist['Low'].iloc[-1], 2),
                 'previous_close': round(prev, 2),
                 'volume': int(hist['Volume'].iloc[-1]),
-                'avg_volume': int(hist['Volume'].mean()),
-                'high_52w': round(hist['High'].max(), 2),
-                'low_52w': round(hist['Low'].min(), 2),
-                'market_cap': info.get('marketCap', 0),
-                'pe_ratio': info.get('trailingPE'),
                 'prices': hist,
-                'currency': info.get('currency', 'SAR' if '.SR' in yahoo_symbol else 'USD'),
+                'currency': info.get('currency', 'SAR' if market=='saudi' else 'USD'),
                 'timestamp': datetime.now().isoformat()
             }
 
-            _cache[yahoo_symbol] = (data_res, now)
-            return data_res
+            # حفظ في الكاش
+            _cache[yahoo_symbol] = (stock_results, now)
+            return stock_results
 
         except Exception as e:
-            print(f"❌ Error fetching {yahoo_symbol}: {e}")
+            print(f"Error: {e}")
             return None
 
     def prepare_json(self, data):
         if not data: return None
+        # إزالة DataFrame الأسعار قبل الإرسال للمتصفح
         return {k: v for k, v in data.items() if k != 'prices'}
 
     def get_chart_series(self, prices_df):
-        # حساب المؤشرات الفنية (RSI, MACD) بسرعة باستخدام Pandas
         closes = prices_df['Close']
         
-        # SMA
+        # حساب المؤشرات الفنية (RSI, MACD, SMA)
         sma20 = closes.rolling(window=20).mean()
-        sma50 = closes.rolling(window=50).mean()
-
+        
         # RSI
         delta = closes.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -109,7 +108,6 @@ class StockDataFetcher:
             'dates_list': [d.strftime('%m/%d') for d in prices_df.index],
             'prices_list': [round(c, 2) for c in closes],
             'sma20_list': [round(v, 2) if pd.notnull(v) else None for v in sma20],
-            'sma50_list': [round(v, 2) if pd.notnull(v) else None for v in sma50],
             'rsi_list': [round(v, 2) if pd.notnull(v) else None for v in rsi],
             'macd_list': [round(v, 4) if pd.notnull(v) else None for v in macd],
             'signal_list': [round(v, 4) if pd.notnull(v) else None for v in signal],
