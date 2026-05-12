@@ -42,9 +42,26 @@ def search_stock():
         return jsonify(cached)
     data = fetcher.get_stock_data(query, market)
     if data:
-        data['indicators'] = analyzer.calculate_all(data['prices'])
-        set_cached_data(query, data)
-        return jsonify(data)
+        indicators = analyzer.calculate_all(data['prices'])
+        result = {
+            'symbol': data['symbol'],
+            'name': data['name'],
+            'market': data['market'],
+            'current': data['current'],
+            'change': data['change'],
+            'open': data['open'],
+            'high': data['high'],
+            'low': data['low'],
+            'previous_close': data['previous_close'],
+            'volume': data['volume'],
+            'avg_volume': data['avg_volume'],
+            'high_52w': data['high_52w'],
+            'low_52w': data['low_52w'],
+            'currency': data['currency'],
+            'indicators': indicators
+        }
+        set_cached_data(query, result)
+        return jsonify(result)
     return jsonify({'error': 'لم يتم العثور على السهم'})
 
 @app.route('/api/analyze/<symbol>')
@@ -53,10 +70,32 @@ def analyze_stock(symbol):
     data = fetcher.get_stock_data(symbol, market)
     if not data:
         return jsonify({'error': 'بيانات غير متوفرة'})
-    analysis = analyzer.full_analysis(data['prices'])
-    data['analysis'] = analysis
-    data['recommendation'] = analyzer.get_recommendation(analysis)
-    return jsonify(data)
+
+    try:
+        analysis = analyzer.full_analysis(data['prices'])
+        recommendation = analyzer.get_recommendation(analysis)
+
+        return jsonify({
+            'symbol': data['symbol'],
+            'name': data['name'],
+            'market': data['market'],
+            'current': data['current'],
+            'change': data['change'],
+            'open': data['open'],
+            'high': data['high'],
+            'low': data['low'],
+            'previous_close': data['previous_close'],
+            'volume': data['volume'],
+            'avg_volume': data['avg_volume'],
+            'high_52w': data['high_52w'],
+            'low_52w': data['low_52w'],
+            'currency': data['currency'],
+            'analysis': analysis,
+            'recommendation': recommendation
+        })
+    except Exception as e:
+        print(f"Error analyzing {symbol}: {e}")
+        return jsonify({'error': f'خطأ في التحليل: {str(e)}'})
 
 @app.route('/api/report/<symbol>')
 def generate_report(symbol):
@@ -64,29 +103,37 @@ def generate_report(symbol):
     data = fetcher.get_stock_data(symbol, market)
     if not data:
         return jsonify({'error': 'بيانات غير متوفرة'})
-    analysis = analyzer.full_analysis(data['prices'])
-    pdf_path = reporter.generate_pdf(symbol, data, analysis)
-    return send_file(pdf_path, as_attachment=True,
-                     download_name=f'{symbol}_analysis_{datetime.now().strftime("%Y%m%d")}.pdf')
+    try:
+        analysis = analyzer.full_analysis(data['prices'])
+        pdf_path = reporter.generate_pdf(symbol, data, analysis)
+        return send_file(pdf_path, as_attachment=True,
+                         download_name=f'{symbol}_analysis_{datetime.now().strftime("%Y%m%d")}.pdf')
+    except Exception as e:
+        print(f"Error generating report {symbol}: {e}")
+        return jsonify({'error': f'خطأ في إنشاء التقرير: {str(e)}'})
 
 @app.route('/api/market-overview')
 def market_overview():
     symbols = {
-        'saudi': ['2222.SR', '1180.SR', '8280.SR', '2350.SR'],
+        'saudi': ['2222', '1180', '8280', '2350'],
         'us': ['AAPL', 'TSLA', 'NVDA', 'MSFT']
     }
     overview = {}
     for market, syms in symbols.items():
         overview[market] = []
         for sym in syms:
-            data = fetcher.get_stock_data(sym.replace('.SR', '') if market == 'saudi' else sym, market)
-            if data:
-                overview[market].append({
-                    'symbol': sym,
-                    'price': data['current'],
-                    'change': data['change'],
-                    'name': data.get('name', sym)
-                })
+            try:
+                data = fetcher.get_stock_data(sym, market)
+                if data:
+                    overview[market].append({
+                        'symbol': data['symbol'],
+                        'price': data['current'],
+                        'change': data['change'],
+                        'name': data.get('name', sym)
+                    })
+            except Exception as e:
+                print(f"Error in market overview for {sym}: {e}")
+                continue
     return jsonify(overview)
 
 if __name__ == '__main__':
