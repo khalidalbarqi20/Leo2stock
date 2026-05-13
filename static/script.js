@@ -1,12 +1,14 @@
 /* ============================================
-   Leo2Stock — Main JavaScript (Fixed)
+   Leo2Stock — Main JavaScript (Enhanced v2.1)
+   Custom Candlestick Chart with Canvas API
    ============================================ */
 
 // ======= State =======
 let currentMarket = 'all';
 let currentSymbol = null;
 let currentData = null;
-let priceChart = null;
+let candlestickCanvas = null;
+let volumeCanvas = null;
 let rsiChart = null;
 let macdChart = null;
 let alertInterval = null;
@@ -52,6 +54,9 @@ function getChartColors() {
         positive: '#00e676',
         negative: '#ff1744',
         warning: '#ffab40',
+        purple: '#7c4dff',
+        bg: isDark ? '#141d2e' : '#ffffff',
+        bg2: isDark ? '#1a2540' : '#f4f7fd',
     };
 }
 
@@ -91,6 +96,57 @@ async function searchStock() {
     showLoading(false);
 }
 
+// ======= RSI Scanner =======
+async function runRsiScan() {
+    const rsiMax = document.getElementById('rsiInput').value || 30;
+    const market = document.getElementById('rsiMarket').value;
+
+    showLoading(true);
+
+    try {
+        const res = await fetch(`./api/rsi-scan?market=${market}&rsi_max=${rsiMax}`);
+        const data = await res.json();
+
+        displayRsiResults(data);
+    } catch (err) {
+        showError('خطأ في مسح RSI');
+        console.error(err);
+    }
+
+    showLoading(false);
+}
+
+function displayRsiResults(results) {
+    const container = document.getElementById('rsiResults');
+    const tbody = document.getElementById('rsiTableBody');
+
+    if (!results || results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;">لا توجد نتائج</td></tr>';
+        container.classList.remove('hidden');
+        return;
+    }
+
+    tbody.innerHTML = results.map(stock => {
+        const isPositive = stock.change >= 0;
+        const rec = stock.recommendation || {};
+        const recColor = rec.color || 'gray';
+
+        return `
+            <tr>
+                <td><strong>${stock.symbol}</strong></td>
+                <td>${stock.name || stock.symbol}</td>
+                <td>${formatPrice(stock.price, stock.currency)}</td>
+                <td class="${isPositive ? 'positive' : 'negative'}">${isPositive ? '+' : ''}${stock.change}%</td>
+                <td><strong style="color:${stock.rsi < 30 ? '#00e676' : '#ff1744'}">${stock.rsi}</strong></td>
+                <td><span class="rec-badge ${recColor}">${rec.action || 'محايد'}</span></td>
+                <td><button class="mini-btn" onclick="loadStock('${stock.symbol}')">تحليل</button></td>
+            </tr>
+        `;
+    }).join('');
+
+    container.classList.remove('hidden');
+}
+
 // ======= Display Result =======
 function displayResult(data) {
     const analysis = data.analysis || {};
@@ -99,6 +155,7 @@ function displayResult(data) {
     const bb = indicators.bollinger || {};
     const macd = indicators.macd || {};
     const stoch = indicators.stochastic || {};
+    const targets = analysis.targets || {};
     const fund_reason = analysis.fundamental_reason || {};
 
     const isPositive = data.change >= 0;
@@ -121,6 +178,19 @@ function displayResult(data) {
     document.getElementById('res-volume').textContent = formatVolume(data.volume);
     document.getElementById('res-high52').textContent = formatPrice(data.high_52w, data.currency);
     document.getElementById('res-low52').textContent = formatPrice(data.low_52w, data.currency);
+
+    // Targets
+    document.getElementById('target-1').textContent = formatPrice(targets.target_1, data.currency);
+    document.getElementById('target-2').textContent = formatPrice(targets.target_2, data.currency);
+    document.getElementById('target-3').textContent = formatPrice(targets.target_3, data.currency);
+    document.getElementById('target-4').textContent = formatPrice(targets.target_4, data.currency);
+    document.getElementById('target-stop').textContent = formatPrice(targets.stop_loss, data.currency);
+
+    // Supports
+    document.getElementById('support-1').textContent = formatPrice(targets.support_1, data.currency);
+    document.getElementById('support-2').textContent = formatPrice(targets.support_2, data.currency);
+    document.getElementById('support-3').textContent = formatPrice(targets.support_3, data.currency);
+    document.getElementById('support-4').textContent = formatPrice(targets.support_4, data.currency);
 
     // Indicators
     const rsi = indicators.rsi || 50;
@@ -178,7 +248,7 @@ function displayResult(data) {
     };
     document.getElementById('fund-trend').textContent = trendMap[analysis.trend] || '—';
 
-    // Fundamental Reason - سبب الهبوط/الارتفاع
+    // Fundamental Reason
     const fundReasonEl = document.getElementById('fund-reason');
     if (fundReasonEl) {
         fundReasonEl.innerHTML = `
@@ -211,7 +281,8 @@ function displayResult(data) {
     }
 
     // Draw Charts
-    drawPriceChart(data);
+    drawCandlestickChart(data);
+    drawVolumeChart(data);
     drawRsiChart(data);
     drawMacdChart(data);
 
@@ -220,102 +291,271 @@ function displayResult(data) {
     document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ======= Charts =======
-function drawPriceChart(data) {
-    const ctx = document.getElementById('priceChart').getContext('2d');
+// ======= Custom Candlestick Chart with Canvas API =======
+function drawCandlestickChart(data) {
+    const canvas = document.getElementById('candlestickChart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
     const c = getChartColors();
 
-    // استخدم البيانات من الـ API
-    const prices = data.prices_list || [];
+    const prices = data.prices_arr || [];
     const dates = data.dates_list || [];
     const sma20 = data.sma20_list || [];
     const sma50 = data.sma50_list || [];
+    const sma200 = data.sma200_list || [];
 
-    if (!prices.length) {
-        console.warn('No price data for chart');
+    if (!prices.length || prices.length < 5) {
+        console.warn('No price data for candlestick chart');
         return;
     }
 
-    if (priceChart) priceChart.destroy();
+    // Set canvas size
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
 
-    // إنشاء datasets
-    const datasets = [{
-        label: 'السعر',
-        data: prices,
-        borderColor: c.accent,
-        backgroundColor: 'rgba(0,229,255,0.05)',
-        borderWidth: 2,
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-    }];
+    const width = canvas.width;
+    const height = canvas.height;
+    const padding = { top: 20, right: 60, bottom: 40, left: 10 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
 
-    // SMA 20
-    if (sma20.some(v => v !== null)) {
-        datasets.push({
-            label: 'SMA 20',
-            data: sma20,
-            borderColor: c.warning,
-            borderWidth: 1.5,
-            fill: false,
-            tension: 0.3,
-            pointRadius: 0,
-            borderDash: [4, 2],
-        });
-    }
-
-    // SMA 50
-    if (sma50.some(v => v !== null)) {
-        datasets.push({
-            label: 'SMA 50',
-            data: sma50,
-            borderColor: c.negative,
-            borderWidth: 1.5,
-            fill: false,
-            tension: 0.3,
-            pointRadius: 0,
-            borderDash: [6, 3],
-        });
-    }
-
-    priceChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: dates,
-            datasets: datasets
-        },
-        options: {
-            responsive: true,
-            interaction: { intersect: false, mode: 'index' },
-            plugins: {
-                legend: {
-                    labels: { color: c.text, font: { family: 'Cairo', size: 11 }, boxWidth: 16 }
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(20,29,46,0.95)',
-                    titleColor: c.text,
-                    bodyColor: c.text,
-                    borderColor: c.accent,
-                    borderWidth: 1,
-                    padding: 10,
-                    rtl: true,
-                }
-            },
-            scales: {
-                x: {
-                    grid: { color: c.grid },
-                    ticks: { color: c.text, font: { size: 10 }, maxTicksLimit: 8 }
-                },
-                y: {
-                    grid: { color: c.grid },
-                    ticks: { color: c.text, font: { size: 10 } },
-                }
-            }
+    // Calculate SMA 7
+    const sma7 = [];
+    const closes = prices.map(p => p.close || p.Close || 0);
+    for (let i = 0; i < closes.length; i++) {
+        if (i >= 6) {
+            sma7.push(closes.slice(i - 6, i + 1).reduce((a, b) => a + b, 0) / 7);
+        } else {
+            sma7.push(null);
         }
+    }
+
+    // Find min/max for scaling
+    let allValues = [];
+    prices.forEach(p => {
+        allValues.push(p.high || p.High || 0);
+        allValues.push(p.low || p.Low || 0);
+    });
+    sma20.forEach(v => { if (v) allValues.push(v); });
+    sma50.forEach(v => { if (v) allValues.push(v); });
+    sma200.forEach(v => { if (v) allValues.push(v); });
+    sma7.forEach(v => { if (v) allValues.push(v); });
+
+    const minPrice = Math.min(...allValues.filter(v => v > 0)) * 0.98;
+    const maxPrice = Math.max(...allValues) * 1.02;
+    const priceRange = maxPrice - minPrice;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+
+    // Draw grid
+    ctx.strokeStyle = c.grid;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 5; i++) {
+        const y = padding.top + (chartHeight / 5) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+
+        // Price labels
+        const price = maxPrice - (priceRange / 5) * i;
+        ctx.fillStyle = c.text;
+        ctx.font = '10px Cairo';
+        ctx.textAlign = 'left';
+        ctx.fillText(price.toFixed(2), width - padding.right + 5, y + 3);
+    }
+
+    // Draw date labels (show every ~10th date)
+    const dateStep = Math.max(1, Math.floor(dates.length / 8));
+    for (let i = 0; i < dates.length; i += dateStep) {
+        const x = padding.left + (i / (prices.length - 1)) * chartWidth;
+        ctx.fillStyle = c.text;
+        ctx.font = '9px Cairo';
+        ctx.textAlign = 'center';
+        const dateStr = dates[i] ? dates[i].slice(5) : ''; // MM-DD
+        ctx.fillText(dateStr, x, height - 10);
+    }
+
+    // Calculate candle width
+    const candleWidth = Math.max(1, (chartWidth / prices.length) * 0.7);
+    const candleSpacing = chartWidth / prices.length;
+
+    // Draw candles
+    prices.forEach((p, i) => {
+        const open = p.open || p.Open || p.close || p.Close || 0;
+        const high = p.high || p.High || p.close || p.Close || 0;
+        const low = p.low || p.Low || p.close || p.Close || 0;
+        const close = p.close || p.Close || 0;
+
+        const x = padding.left + i * candleSpacing + candleSpacing / 2;
+        const yOpen = padding.top + ((maxPrice - open) / priceRange) * chartHeight;
+        const yHigh = padding.top + ((maxPrice - high) / priceRange) * chartHeight;
+        const yLow = padding.top + ((maxPrice - low) / priceRange) * chartHeight;
+        const yClose = padding.top + ((maxPrice - close) / priceRange) * chartHeight;
+
+        const isGreen = close >= open;
+        const color = isGreen ? c.positive : c.negative;
+
+        // Draw wick
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, yHigh);
+        ctx.lineTo(x, yLow);
+        ctx.stroke();
+
+        // Draw body
+        const bodyTop = Math.min(yOpen, yClose);
+        const bodyHeight = Math.abs(yClose - yOpen);
+        ctx.fillStyle = isGreen ? color : color;
+        if (!isGreen) {
+            ctx.fillStyle = color;
+        } else {
+            ctx.fillStyle = 'rgba(0,230,118,0.3)';
+            ctx.strokeStyle = color;
+        }
+
+        const bodyWidth = Math.max(1, candleWidth);
+        ctx.fillRect(x - bodyWidth / 2, bodyTop, bodyWidth, Math.max(1, bodyHeight));
+
+        if (isGreen) {
+            ctx.strokeRect(x - bodyWidth / 2, bodyTop, bodyWidth, Math.max(1, bodyHeight));
+        }
+    });
+
+    // Draw SMA lines
+    function drawSMALine(smaData, color, lineWidth, dash) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        if (dash) ctx.setLineDash(dash);
+        else ctx.setLineDash([]);
+
+        ctx.beginPath();
+        let started = false;
+        smaData.forEach((v, i) => {
+            if (v === null || v === undefined) return;
+            const x = padding.left + i * candleSpacing + candleSpacing / 2;
+            const y = padding.top + ((maxPrice - v) / priceRange) * chartHeight;
+            if (!started) {
+                ctx.moveTo(x, y);
+                started = true;
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    drawSMALine(sma7, c.warning, 1.5, [2, 2]);
+    drawSMALine(sma20, c.purple, 1.5, [4, 2]);
+    drawSMALine(sma50, c.negative, 1.5, [6, 3]);
+    drawSMALine(sma200, c.positive, 2, []);
+
+    // Draw targets/supports as horizontal lines
+    const targets = (data.analysis && data.analysis.targets) || {};
+    if (targets.target_1) {
+        ctx.strokeStyle = 'rgba(0,230,118,0.4)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        const y = padding.top + ((maxPrice - targets.target_1) / priceRange) * chartHeight;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    if (targets.stop_loss) {
+        ctx.strokeStyle = 'rgba(255,23,68,0.4)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        const y = padding.top + ((maxPrice - targets.stop_loss) / priceRange) * chartHeight;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+}
+
+// ======= Volume Chart =======
+function drawVolumeChart(data) {
+    const canvas = document.getElementById('volumeChart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const c = getChartColors();
+
+    const prices = data.prices_arr || [];
+    const dates = data.dates_list || [];
+    const volumes = data.volumes_list || [];
+
+    if (!volumes.length) {
+        console.warn('No volume data');
+        return;
+    }
+
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    const padding = { top: 10, right: 60, bottom: 20, left: 10 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+
+    const maxVol = Math.max(...volumes.filter(v => v > 0)) * 1.1;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Draw grid
+    ctx.strokeStyle = c.grid;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 3; i++) {
+        const y = padding.top + (chartHeight / 3) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+
+        const vol = maxVol - (maxVol / 3) * i;
+        ctx.fillStyle = c.text;
+        ctx.font = '9px Cairo';
+        ctx.textAlign = 'left';
+        ctx.fillText(formatVolumeCompact(vol), width - padding.right + 5, y + 3);
+    }
+
+    const barWidth = Math.max(1, (chartWidth / volumes.length) * 0.8);
+    const barSpacing = chartWidth / volumes.length;
+
+    volumes.forEach((v, i) => {
+        const p = prices[i] || {};
+        const close = p.close || p.Close || 0;
+        const open = p.open || p.Open || close;
+        const isGreen = close >= open;
+
+        const x = padding.left + i * barSpacing + barSpacing / 2;
+        const barHeight = (v / maxVol) * chartHeight;
+        const y = padding.top + chartHeight - barHeight;
+
+        ctx.fillStyle = isGreen ? 'rgba(0,230,118,0.5)' : 'rgba(255,23,68,0.5)';
+        ctx.fillRect(x - barWidth / 2, y, barWidth, barHeight);
     });
 }
 
+function formatVolumeCompact(vol) {
+    if (vol >= 1e9) return `${(vol / 1e9).toFixed(1)}B`;
+    if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)}M`;
+    if (vol >= 1e3) return `${(vol / 1e3).toFixed(0)}K`;
+    return vol.toString();
+}
+
+// ======= RSI Chart (Chart.js) =======
 function drawRsiChart(data) {
     const ctx = document.getElementById('rsiChart').getContext('2d');
     const c = getChartColors();
@@ -347,6 +587,7 @@ function drawRsiChart(data) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             interaction: { intersect: false, mode: 'index' },
             plugins: {
                 legend: { display: false },
@@ -361,9 +602,7 @@ function drawRsiChart(data) {
                 }
             },
             scales: {
-                x: {
-                    display: false,
-                },
+                x: { display: false },
                 y: {
                     min: 0,
                     max: 100,
@@ -375,6 +614,7 @@ function drawRsiChart(data) {
     });
 }
 
+// ======= MACD Chart (Chart.js) =======
 function drawMacdChart(data) {
     const ctx = document.getElementById('macdChart').getContext('2d');
     const c = getChartColors();
@@ -390,7 +630,6 @@ function drawMacdChart(data) {
 
     if (macdChart) macdChart.destroy();
 
-    // Histogram colors
     const histColors = histList.map(v => v >= 0 ? 'rgba(0,230,118,0.6)' : 'rgba(255,23,68,0.6)');
 
     macdChart = new Chart(ctx, {
@@ -431,6 +670,7 @@ function drawMacdChart(data) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             interaction: { intersect: false, mode: 'index' },
             plugins: {
                 legend: {
@@ -447,9 +687,7 @@ function drawMacdChart(data) {
                 }
             },
             scales: {
-                x: {
-                    display: false,
-                },
+                x: { display: false },
                 y: {
                     grid: { color: c.grid },
                     ticks: { color: c.text, font: { size: 10 } },
@@ -461,7 +699,8 @@ function drawMacdChart(data) {
 
 function redrawCharts(data) {
     if (!data) return;
-    drawPriceChart(data);
+    drawCandlestickChart(data);
+    drawVolumeChart(data);
     drawRsiChart(data);
     drawMacdChart(data);
 }
@@ -476,7 +715,8 @@ function updateChartPeriod(period, btn) {
         .then(d => {
             if (d && !d.error) {
                 currentData = { ...currentData, ...d };
-                drawPriceChart(currentData);
+                drawCandlestickChart(currentData);
+                drawVolumeChart(currentData);
                 drawRsiChart(currentData);
                 drawMacdChart(currentData);
             }
