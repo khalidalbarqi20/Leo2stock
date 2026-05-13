@@ -5,7 +5,7 @@ class TechnicalAnalyzer:
     def calculate_sma(self, prices, period):
         closes = list(prices['Close'])
         if len(closes) < period:
-            return sum(closes) / len(closes)
+            return sum(closes) / len(closes) if closes else 0
         return sum(closes[-period:]) / period
 
     def calculate_ema(self, prices, period):
@@ -85,7 +85,7 @@ class TechnicalAnalyzer:
             tr3 = abs(lows[i] - closes[i-1])
             tr_list.append(max(tr1, tr2, tr3))
         if len(tr_list) < period:
-            return round(sum(tr_list) / len(tr_list), 2)
+            return round(sum(tr_list) / len(tr_list), 2) if tr_list else 0
         return round(sum(tr_list[-period:]) / period, 2)
 
     def calculate_stochastic(self, prices, period=14):
@@ -102,8 +102,10 @@ class TechnicalAnalyzer:
         k = 100 * ((current - recent_low) / (recent_high - recent_low))
         k_values = []
         for i in range(min(3, len(closes)-period+1)):
-            rh = max(highs[-(period+i):-(i) if i else None])
-            rl = min(lows[-(period+i):-(i) if i else None])
+            start = -(period+i)
+            end = -(i) if i else None
+            rh = max(highs[start:end])
+            rl = min(lows[start:end])
             c = closes[-(1+i)]
             if rh != rl:
                 k_values.append(100 * ((c - rl) / (rh - rl)))
@@ -124,9 +126,23 @@ class TechnicalAnalyzer:
             'stochastic': self.calculate_stochastic(prices)
         }
 
+    def _get_last_close(self, prices):
+        """آخر سعر إغلاق - يدعم iloc و index"""
+        close_col = prices['Close']
+        # جرب iloc أولاً
+        if hasattr(close_col, 'iloc'):
+            try:
+                return close_col.iloc[-1]
+            except (TypeError, AttributeError):
+                pass
+        # fallback: index عادي
+        closes = list(close_col)
+        return closes[-1] if closes else 0
+
     def full_analysis(self, prices):
         indicators = self.calculate_all(prices)
-        current = prices['Close'].iloc[-1]
+        current = self._get_last_close(prices)
+
         sma20 = indicators['sma_20']
         sma50 = indicators['sma_50']
         sma200 = indicators['sma_200']
@@ -143,8 +159,8 @@ class TechnicalAnalyzer:
 
         closes = list(prices['Close'])
         recent = closes[-20:] if len(closes) >= 20 else closes
-        support = round(min(recent), 2)
-        resistance = round(max(recent), 2)
+        support = round(min(recent), 2) if recent else 0
+        resistance = round(max(recent), 2) if recent else 0
 
         signals = []
         rsi = indicators['rsi']
