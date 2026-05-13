@@ -6,7 +6,6 @@ class TechnicalAnalyzer:
     def _get_closes(self, prices):
         """استخراج قائمة الأسعار من أي نوع بيانات"""
         close_col = prices['Close']
-        # جرب iloc أولاً
         if hasattr(close_col, 'iloc'):
             try:
                 iloc_obj = close_col.iloc
@@ -14,7 +13,6 @@ class TechnicalAnalyzer:
                     return list(close_col)
             except:
                 pass
-        # fallback
         if hasattr(close_col, '_d'):
             return list(close_col._d)
         return list(close_col)
@@ -31,8 +29,19 @@ class TechnicalAnalyzer:
             return list(low_col._d)
         return list(low_col)
 
+    def _get_opens(self, prices):
+        open_col = prices['Open']
+        if hasattr(open_col, '_d'):
+            return list(open_col._d)
+        return list(open_col)
+
+    def _get_volumes(self, prices):
+        vol_col = prices['Volume']
+        if hasattr(vol_col, '_d'):
+            return list(vol_col._d)
+        return list(vol_col)
+
     def _get_last_close(self, prices):
-        """آخر سعر إغلاق"""
         closes = self._get_closes(prices)
         return closes[-1] if closes else 0
 
@@ -161,7 +170,6 @@ class TechnicalAnalyzer:
         }
 
     def _calculate_rsi_series(self, closes, period=14):
-        """حساب سلسلة RSI للرسم البياني"""
         if len(closes) < period + 1:
             return [50] * len(closes)
         rsi_values = []
@@ -178,22 +186,19 @@ class TechnicalAnalyzer:
             avg_loss = sum(losses) / period if losses else 0.001
             rs = avg_gain / avg_loss
             rsi_values.append(round(100 - (100 / (1 + rs)), 2))
-        # padding
         return [50] * period + rsi_values
 
     def _calculate_macd_series(self, closes):
-        """حساب سلسلة MACD للرسم البياني"""
         ema12 = self._ema_list(closes, 12)
         ema26 = self._ema_list(closes, 26)
         macd_line = [e12 - e26 for e12, e26 in zip(ema12, ema26)]
         signal_line = self._ema_list(macd_line, 9)
         hist = [m - s for m, s in zip(macd_line[-len(signal_line):], signal_line)]
-        
-        # padding للتساوي
+
         macd_padded = [0] * (len(closes) - len(macd_line)) + macd_line
         signal_padded = [0] * (len(closes) - len(signal_line)) + signal_line
         hist_padded = [0] * (len(closes) - len(hist)) + hist
-        
+
         return {
             'macd': macd_padded,
             'signal': signal_padded,
@@ -201,7 +206,6 @@ class TechnicalAnalyzer:
         }
 
     def _calculate_sma_series(self, closes, period):
-        """حساب سلسلة SMA للرسم البياني"""
         sma = []
         for i in range(len(closes)):
             if i >= period - 1:
@@ -211,24 +215,104 @@ class TechnicalAnalyzer:
         return sma
 
     def get_chart_data(self, prices):
-        """بيانات الرسوم البيانية للـ frontend"""
         closes = self._get_closes(prices)
         if not closes:
             return {}
-        
+
+        opens = self._get_opens(prices)
+        highs = self._get_highs(prices)
+        lows = self._get_lows(prices)
+        volumes = self._get_volumes(prices)
+
         sma20 = self._calculate_sma_series(closes, 20)
         sma50 = self._calculate_sma_series(closes, 50)
+        sma200 = self._calculate_sma_series(closes, 200)
         rsi = self._calculate_rsi_series(closes, 14)
         macd_data = self._calculate_macd_series(closes)
-        
+
         return {
             'prices_list': closes,
+            'opens_list': opens,
+            'highs_list': highs,
+            'lows_list': lows,
+            'volumes_list': volumes,
             'sma20_list': sma20,
             'sma50_list': sma50,
+            'sma200_list': sma200,
             'rsi_list': rsi,
             'macd_list': macd_data['macd'],
             'signal_list': macd_data['signal'],
             'histogram_list': macd_data['histogram'],
+        }
+
+    def calculate_targets(self, prices, indicators):
+        """حساب الأهداف المتوقعة والدعوم"""
+        closes = self._get_closes(prices)
+        highs = self._get_highs(prices)
+        lows = self._get_lows(prices)
+        current = closes[-1] if closes else 0
+
+        bb = indicators.get('bollinger', {})
+        atr = indicators.get('atr', 0)
+        sma20 = indicators.get('sma_20', current)
+        sma50 = indicators.get('sma_50', current)
+        sma200 = indicators.get('sma_200', current)
+
+        # الدعوم (آخر 20 قاع)
+        recent_lows = sorted(lows[-20:]) if len(lows) >= 20 else sorted(lows)
+        supports = []
+        if len(recent_lows) >= 4:
+            supports = [
+                round(recent_lows[0], 2),
+                round(recent_lows[1], 2),
+                round(recent_lows[2], 2),
+                round(recent_lows[3], 2),
+            ]
+        elif recent_lows:
+            supports = [round(min(recent_lows), 2)] * 4
+        else:
+            supports = [round(current * 0.95, 2)] * 4
+
+        # الأهداف (آخر 20 قمة)
+        recent_highs = sorted(highs[-20:], reverse=True) if len(highs) >= 20 else sorted(highs, reverse=True)
+        targets = []
+        if len(recent_highs) >= 4:
+            targets = [
+                round(recent_highs[0], 2),
+                round(recent_highs[1], 2),
+                round(recent_highs[2], 2),
+                round(recent_highs[3], 2),
+            ]
+        elif recent_highs:
+            targets = [round(max(recent_highs), 2)] * 4
+        else:
+            targets = [round(current * 1.05, 2)] * 4
+
+        # وقف الخسارة
+        stop_loss = round(supports[0] - atr * 1.5, 2) if atr > 0 else round(supports[0] * 0.98, 2)
+
+        # تحسين الأهداف باستخدام Bollinger
+        if bb.get('upper'):
+            targets[0] = max(targets[0], round(bb['upper'], 2))
+        if bb.get('middle'):
+            targets[1] = max(targets[1], round(bb['middle'] + (bb.get('upper', bb['middle']) - bb['middle']) * 0.5, 2))
+
+        # ترتيب الأهداف تصاعدياً
+        targets = sorted(set(targets), reverse=True)
+        while len(targets) < 4:
+            targets.append(round(targets[-1] * 1.02, 2) if targets else round(current * 1.05, 2))
+        targets = targets[:4]
+
+        return {
+            'target_1': targets[0],
+            'target_2': targets[1],
+            'target_3': targets[2],
+            'target_4': targets[3],
+            'stop_loss': stop_loss,
+            'support_1': supports[0],
+            'support_2': supports[1],
+            'support_3': supports[2],
+            'support_4': supports[3],
         }
 
     def full_analysis(self, prices):
@@ -273,7 +357,7 @@ class TechnicalAnalyzer:
         elif current >= bb['upper']:
             signals.append('بولينجر: السعر عند الحد العلوي (ربما تصحيح)')
 
-        # تحليل أساسي - سبب الهبوط/الارتفاع
+        targets = self.calculate_targets(prices, indicators)
         fundamental_reason = self._get_fundamental_reason(trend, indicators, current, support, resistance)
 
         return {
@@ -283,18 +367,18 @@ class TechnicalAnalyzer:
             'resistance': resistance,
             'signals': signals,
             'current_price': round(current, 2),
-            'fundamental_reason': fundamental_reason
+            'fundamental_reason': fundamental_reason,
+            'targets': targets,
         }
 
     def _get_fundamental_reason(self, trend, indicators, current, support, resistance):
-        """تحليل سبب الهبوط أو الارتفاع"""
         rsi = indicators['rsi']
         macd = indicators['macd']
         bb = indicators['bollinger']
         stoch = indicators['stochastic']
-        
+
         reasons = []
-        
+
         if trend in ['strong_bullish', 'bullish']:
             if rsi > 50 and rsi < 70:
                 reasons.append('الزخم الشرائي مستمر مع RSI في منطقة إيجابية')
