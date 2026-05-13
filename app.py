@@ -10,13 +10,13 @@ from report_generator import ReportGenerator
 app = Flask(__name__)
 CORS(app)
 
-fetcher  = StockDataFetcher()
+fetcher = StockDataFetcher()
 analyzer = TechnicalAnalyzer()
 reporter = ReportGenerator()
 
-# ── كاش قوي: 10 دقائق للبيانات العادية، ساعة للمؤشرات ──
+# ── كاش قوي ──
 _cache = {}
-_lock  = threading.Lock()
+_lock = threading.Lock()
 
 def cache_get(key):
     with _lock:
@@ -43,9 +43,9 @@ def index():
 # ── تحليل سهم ────────────────────────────────────────────
 @app.route('/api/analyze/<symbol>')
 def analyze_stock(symbol):
-    sym  = symbol.upper().replace('.SR','')
-    mkt  = 'saudi' if sym.isdigit() else 'us'
-    key  = f"analyze_{sym}_{mkt}"
+    sym = symbol.upper().replace('.SR', '')
+    mkt = 'saudi' if sym.isdigit() else 'us'
+    key = f"analyze_{sym}_{mkt}"
     cached = cache_get(key)
     if cached:
         return jsonify(cached)
@@ -56,27 +56,77 @@ def analyze_stock(symbol):
 
     try:
         analysis = analyzer.full_analysis(data['prices'])
-        rec      = analyzer.get_recommendation(analysis)
+        rec = analyzer.get_recommendation(analysis)
+        
+        # بيانات الرسوم البيانية
+        chart_data = analyzer.get_chart_data(data['prices'])
         prices_arr = fetcher.prices_to_array(data['prices'])
-        result = {**safe_data(data), 'analysis': analysis,
-                  'recommendation': rec, 'prices_arr': prices_arr}
+        
+        # استخراج التواريخ
+        dates_list = []
+        for p in prices_arr:
+            dates_list.append(p['date'])
+        
+        result = {
+            **safe_data(data),
+            'analysis': analysis,
+            'recommendation': rec,
+            'prices_arr': prices_arr,
+            'dates_list': dates_list,
+            **chart_data,
+        }
         cache_set(key, result, minutes=10)
         return jsonify(result)
     except Exception as e:
+        import traceback
         print(f"Error analyze {symbol}: {e}")
+        print(traceback.format_exc())
         return jsonify({'error': f'خطأ في التحليل: {str(e)}'})
+
+# ── بيانات الرسم البياني لفترة محددة ─────────────────────
+@app.route('/api/chart-data/<symbol>')
+def chart_data(symbol):
+    sym = symbol.upper().replace('.SR', '')
+    mkt = 'saudi' if sym.isdigit() else 'us'
+    period = request.args.get('period', '6mo')
+    
+    data = fetcher.get_stock_data(sym, mkt)
+    if not data:
+        return jsonify({'error': 'تعذّر جلب البيانات'})
+    
+    try:
+        chart_data = analyzer.get_chart_data(data['prices'])
+        prices_arr = fetcher.prices_to_array(data['prices'])
+        dates_list = [p['date'] for p in prices_arr]
+        
+        # تصفية حسب الفترة
+        days_map = {'1mo': 30, '3mo': 90, '6mo': 180}
+        days = days_map.get(period, 180)
+        
+        if len(dates_list) > days:
+            start = len(dates_list) - days
+            dates_list = dates_list[start:]
+            for k in ['prices_list', 'sma20_list', 'sma50_list', 'rsi_list', 
+                      'macd_list', 'signal_list', 'histogram_list']:
+                if k in chart_data and chart_data[k]:
+                    chart_data[k] = chart_data[k][start:]
+        
+        chart_data['dates_list'] = dates_list
+        return jsonify(chart_data)
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 # ── تقرير PDF ─────────────────────────────────────────────
 @app.route('/api/report/<symbol>')
 def generate_report(symbol):
-    sym = symbol.upper().replace('.SR','')
+    sym = symbol.upper().replace('.SR', '')
     mkt = 'saudi' if sym.isdigit() else 'us'
     data = fetcher.get_stock_data(sym, mkt)
     if not data:
         return jsonify({'error': 'تعذّر جلب البيانات'})
     try:
         analysis = analyzer.full_analysis(data['prices'])
-        rec      = analyzer.get_recommendation(analysis)
+        rec = analyzer.get_recommendation(analysis)
         analysis['recommendation'] = rec
         pdf = reporter.generate_pdf(symbol, data, analysis)
         return send_file(pdf, as_attachment=True,
@@ -88,16 +138,17 @@ def generate_report(symbol):
 @app.route('/api/main-indices')
 def main_indices():
     indices = [
-        {'symbol':'^TASI', 'name':'تاسي',   'flag':'🇸🇦','currency':'SAR'},
-        {'symbol':'^GSPC', 'name':'S&P 500', 'flag':'🇺🇸','currency':'USD'},
-        {'symbol':'GC=F',  'name':'الذهب',   'flag':'🥇', 'currency':'USD'},
+        {'symbol': '^TASI', 'name': 'تاسي', 'flag': '🇸🇦', 'currency': 'SAR'},
+        {'symbol': '^GSPC', 'name': 'S&P 500', 'flag': '🇺🇸', 'currency': 'USD'},
+        {'symbol': 'GC=F', 'name': 'الذهب', 'flag': '🥇', 'currency': 'USD'},
     ]
     result = []
     for idx in indices:
-        key    = f"idx_{idx['symbol']}"
+        key = f"idx_{idx['symbol']}"
         cached = cache_get(key)
         if cached:
-            result.append(cached); continue
+            result.append(cached)
+            continue
         data = fetcher.get_index_data(idx['symbol'])
         if data:
             row = {**idx, **data}
@@ -109,15 +160,15 @@ def main_indices():
 @app.route('/api/rsi-scan')
 def rsi_scan():
     market = request.args.get('market', 'saudi')
-    key    = f"rsi_scan_{market}"
+    key = f"rsi_scan_{market}"
     cached = cache_get(key)
     if cached:
         return jsonify(cached)
 
     if market == 'saudi':
-        symbols = ['2222','1180','1120','2010','1010','3020','2350','8280','2050','1211','4200','2220','1060','1150','2380']
+        symbols = ['2222', '1180', '1120', '2010', '1010', '3020', '2350', '8280', '2050', '1211', '4200', '2220', '1060', '1150', '2380']
     else:
-        symbols = ['AAPL','MSFT','GOOGL','AMZN','META','TSLA','NVDA','JPM','JNJ','V','PG','HD','MA','UNH','BAC']
+        symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'JNJ', 'V', 'PG', 'HD', 'MA', 'UNH', 'BAC']
 
     results = []
     for sym in symbols:
@@ -125,17 +176,19 @@ def rsi_scan():
             sk = f"analyze_{sym}_{market}"
             cd = cache_get(sk)
             if cd:
-                rsi = cd.get('analysis',{}).get('indicators',{}).get('rsi', 100)
+                rsi = cd.get('analysis', {}).get('indicators', {}).get('rsi', 100)
                 if rsi < 30:
                     results.append({**cd, 'rsi': rsi})
                 continue
             data = fetcher.get_stock_data(sym, market)
-            if not data: continue
+            if not data:
+                continue
             inds = analyzer.calculate_all(data['prices'])
-            rsi  = inds.get('rsi', 100)
+            rsi = inds.get('rsi', 100)
             if rsi < 30:
                 results.append({**safe_data(data), 'rsi': rsi})
-        except: continue
+        except:
+            continue
 
     results.sort(key=lambda x: x.get('rsi', 100))
     cache_set(key, results, minutes=30)
@@ -144,31 +197,35 @@ def rsi_scan():
 # ── فرص الدخول ────────────────────────────────────────────
 @app.route('/api/opportunities')
 def opportunities():
-    key    = "opportunities"
+    key = "opportunities"
     cached = cache_get(key)
     if cached:
         return jsonify(cached)
 
-    saudi = ['2222','1180','1120','2010','1010','3020','2350','8280','2050','1211']
-    us    = ['AAPL','MSFT','GOOGL','AMZN','META','TSLA','NVDA','JPM','JNJ','V']
+    saudi = ['2222', '1180', '1120', '2010', '1010', '3020', '2350', '8280', '2050', '1211']
+    us = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'JNJ', 'V']
 
     def score(sym, mkt):
         try:
             data = fetcher.get_stock_data(sym, mkt)
-            if not data: return None
-            an  = analyzer.full_analysis(data['prices'])
+            if not data:
+                return None
+            an = analyzer.full_analysis(data['prices'])
             rec = analyzer.get_recommendation(an)
             return {**safe_data(data), 'analysis': an,
                     'recommendation': rec, 'score': rec.get('score', 0)}
-        except: return None
+        except:
+            return None
 
     sr, ur = [], []
     for s in saudi:
         r = score(s, 'saudi')
-        if r and r['score'] >= 1: sr.append(r)
+        if r and r['score'] >= 1:
+            sr.append(r)
     for s in us:
         r = score(s, 'us')
-        if r and r['score'] >= 1: ur.append(r)
+        if r and r['score'] >= 1:
+            ur.append(r)
 
     sr.sort(key=lambda x: x['score'], reverse=True)
     ur.sort(key=lambda x: x['score'], reverse=True)
@@ -179,12 +236,12 @@ def opportunities():
 # ── نظرة السوق ────────────────────────────────────────────
 @app.route('/api/market-overview')
 def market_overview():
-    key    = "market_overview"
+    key = "market_overview"
     cached = cache_get(key)
     if cached:
         return jsonify(cached)
 
-    symbols = {'saudi':['2222','1180','8280','2350'], 'us':['AAPL','TSLA','NVDA','MSFT']}
+    symbols = {'saudi': ['2222', '1180', '8280', '2350'], 'us': ['AAPL', 'TSLA', 'NVDA', 'MSFT']}
     overview = {}
     for mkt, syms in symbols.items():
         overview[mkt] = []
@@ -193,14 +250,29 @@ def market_overview():
                 data = fetcher.get_stock_data(sym, mkt)
                 if data:
                     overview[mkt].append({
-                        'symbol': data['symbol'], 'price': data['current'],
-                        'change': data['change'], 'name':  data['name'],
+                        'symbol': data['symbol'],
+                        'price': data['current'],
+                        'change': data['change'],
+                        'name': data['name'],
                         'currency': data['currency']
                     })
-            except: continue
+            except:
+                continue
 
     cache_set(key, overview, minutes=15)
     return jsonify(overview)
+
+# ── بحث سريع ──────────────────────────────────────────────
+@app.route('/api/search')
+def search():
+    q = request.args.get('q', '').upper().replace('.SR', '')
+    if not q:
+        return jsonify({'error': 'أدخل رمز السهم'})
+    mkt = 'saudi' if q.isdigit() else 'us'
+    data = fetcher.get_stock_data(q, mkt)
+    if not data:
+        return jsonify({'error': 'لم يتم العثور على السهم'})
+    return jsonify(safe_data(data))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
