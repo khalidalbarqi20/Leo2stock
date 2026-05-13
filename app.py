@@ -57,16 +57,16 @@ def analyze_stock(symbol):
     try:
         analysis = analyzer.full_analysis(data['prices'])
         rec = analyzer.get_recommendation(analysis)
-        
+
         # بيانات الرسوم البيانية
         chart_data = analyzer.get_chart_data(data['prices'])
         prices_arr = fetcher.prices_to_array(data['prices'])
-        
+
         # استخراج التواريخ
         dates_list = []
         for p in prices_arr:
             dates_list.append(p['date'])
-        
+
         result = {
             **safe_data(data),
             'analysis': analysis,
@@ -89,28 +89,29 @@ def chart_data(symbol):
     sym = symbol.upper().replace('.SR', '')
     mkt = 'saudi' if sym.isdigit() else 'us'
     period = request.args.get('period', '6mo')
-    
+
     data = fetcher.get_stock_data(sym, mkt)
     if not data:
         return jsonify({'error': 'تعذّر جلب البيانات'})
-    
+
     try:
         chart_data = analyzer.get_chart_data(data['prices'])
         prices_arr = fetcher.prices_to_array(data['prices'])
         dates_list = [p['date'] for p in prices_arr]
-        
+
         # تصفية حسب الفترة
-        days_map = {'1mo': 30, '3mo': 90, '6mo': 180}
+        days_map = {'1mo': 30, '3mo': 90, '6mo': 180, '1y': 365}
         days = days_map.get(period, 180)
-        
+
         if len(dates_list) > days:
             start = len(dates_list) - days
             dates_list = dates_list[start:]
-            for k in ['prices_list', 'sma20_list', 'sma50_list', 'rsi_list', 
+            for k in ['prices_list', 'opens_list', 'highs_list', 'lows_list', 'volumes_list',
+                      'sma20_list', 'sma50_list', 'sma200_list', 'rsi_list', 
                       'macd_list', 'signal_list', 'histogram_list']:
                 if k in chart_data and chart_data[k]:
                     chart_data[k] = chart_data[k][start:]
-        
+
         chart_data['dates_list'] = dates_list
         return jsonify(chart_data)
     except Exception as e:
@@ -156,19 +157,23 @@ def main_indices():
             result.append(row)
     return jsonify(result)
 
-# ── مسح RSI < 30 ──────────────────────────────────────────
+# ── مسح RSI ──────────────────────────────────────────
 @app.route('/api/rsi-scan')
 def rsi_scan():
     market = request.args.get('market', 'saudi')
-    key = f"rsi_scan_{market}"
+    rsi_max = float(request.args.get('rsi_max', 30))
+
+    key = f"rsi_scan_{market}_{rsi_max}"
     cached = cache_get(key)
     if cached:
         return jsonify(cached)
 
     if market == 'saudi':
-        symbols = ['2222', '1180', '1120', '2010', '1010', '3020', '2350', '8280', '2050', '1211', '4200', '2220', '1060', '1150', '2380']
+        symbols = ['2222', '1180', '1120', '2010', '1010', '3020', '2350', '8280', '2050', '1211', 
+                   '4200', '2220', '1060', '1150', '2380', '4230', '2360', '1140', '3001', '3002']
     else:
-        symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'JNJ', 'V', 'PG', 'HD', 'MA', 'UNH', 'BAC']
+        symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'JNJ', 'V', 
+                   'PG', 'HD', 'MA', 'UNH', 'BAC', 'XOM', 'CVX', 'DIS', 'NFLX', 'AMD']
 
     results = []
     for sym in symbols:
@@ -177,16 +182,29 @@ def rsi_scan():
             cd = cache_get(sk)
             if cd:
                 rsi = cd.get('analysis', {}).get('indicators', {}).get('rsi', 100)
-                if rsi < 30:
-                    results.append({**cd, 'rsi': rsi})
+                if rsi <= rsi_max:
+                    results.append({
+                        'symbol': cd.get('symbol'),
+                        'name': cd.get('name'),
+                        'price': cd.get('current'),
+                        'change': cd.get('change'),
+                        'currency': cd.get('currency'),
+                        'rsi': rsi,
+                        'recommendation': cd.get('recommendation', {}),
+                    })
                 continue
             data = fetcher.get_stock_data(sym, market)
             if not data:
                 continue
             inds = analyzer.calculate_all(data['prices'])
             rsi = inds.get('rsi', 100)
-            if rsi < 30:
-                results.append({**safe_data(data), 'rsi': rsi})
+            if rsi <= rsi_max:
+                rec = analyzer.get_recommendation(analyzer.full_analysis(data['prices']))
+                results.append({
+                    **safe_data(data),
+                    'rsi': rsi,
+                    'recommendation': rec,
+                })
         except:
             continue
 
