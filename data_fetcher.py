@@ -6,6 +6,10 @@ from datetime import datetime
 FINNHUB_KEY = os.environ.get('FINNHUB_KEY', '')
 BASE = 'https://finnhub.io/api/v1'
 
+# Rate limiting - آخر طلب
+_last_request_time = 0
+_min_interval = 1.2  # ثانية بين كل طلب (50 طلب/دقيقة آمن)
+
 SAUDI_NAMES = {
     '2222':'أرامكو السعودية','1180':'الأهلي التجاري','1120':'مصرف الراجحي',
     '1010':'الرياض بنك','1150':'بنك الرياض','1160':'البنك العربي الوطني',
@@ -16,9 +20,9 @@ SAUDI_NAMES = {
     '1211':'معادن','8280':'بوبا العربية','4030':'الراجحي للتأمين',
     '8020':'التعاونية للتأمين','2290':'عسير','4002':'جبل عمر',
     '3008':'سدافكو','2400':'البحري','4220':'الطيار','4230':'بنك الإنماء',
-    '2360':'سار','1140':'البنك السعودي للاستثمار','1120':'مصرف الراجحي',
-    '3001':'أسمنت اليمامة','3002':'أسمنت العربية','3003':'أسمنت القصيم',
-    '3004':'أسمنت الجنوب','3005':'أسمنت جازان','3006':'أسمنت ينبع',
+    '2360':'سار','1140':'البنك السعودي للاستثمار','3001':'أسمنت اليمامة',
+    '3002':'أسمنت العربية','3003':'أسمنت القصيم','3004':'أسمنت الجنوب',
+    '3005':'أسمنت جازان','3006':'أسمنت ينبع',
 }
 
 US_NAMES = {
@@ -43,14 +47,29 @@ US_NAMES = {
 }
 
 def _get(endpoint, params={}):
+    global _last_request_time
+
+    # Rate limiting
+    elapsed = time.time() - _last_request_time
+    if elapsed < _min_interval:
+        time.sleep(_min_interval - elapsed)
+
     params['token'] = FINNHUB_KEY
     try:
-        r = requests.get(f'{BASE}{endpoint}', params=params, timeout=8)
+        r = requests.get(f'{BASE}{endpoint}', params=params, timeout=10)
+        _last_request_time = time.time()
+
         if r.status_code == 200:
             return r.json()
+        elif r.status_code == 429:
+            print(f"Rate limited! Waiting...")
+            time.sleep(2)
+            return _get(endpoint, params)  # Retry once
         return None
-    except:
+    except Exception as e:
+        print(f"API Error: {e}")
         return None
+
 
 class FakeDF:
     """يحاكي pandas DataFrame لتوافق technical_analysis.py"""
@@ -82,15 +101,36 @@ class FakeDF:
     @property
     def empty(self): return len(self._closes)==0
 
-    # واجهة مشابهة لـ pandas Series
+    # واجهة مشابهة لـ pandas Series مع دعم iloc
     class _Col:
         def __init__(self, data):
             self._d = data
-        def iloc(self): pass
-        def __getitem__(self, i): return self._d[i]
-        def max(self): return max(self._d) if self._d else 0
-        def min(self): return min(self._d) if self._d else 0
-        def mean(self): return sum(self._d)/len(self._d) if self._d else 0
+
+        @property
+        def iloc(self):
+            class IlocIndexer:
+                def __init__(self, data):
+                    self._d = data
+                def __getitem__(self, key):
+                    if isinstance(key, slice):
+                        return self._d[key]
+                    if key < 0:
+                        return self._d[key]
+                    return self._d[key]
+            return IlocIndexer(self._d)
+
+        def __getitem__(self, i): 
+            return self._d[i]
+        def __len__(self):
+            return len(self._d)
+        def __iter__(self):
+            return iter(self._d)
+        def max(self): 
+            return max(self._d) if self._d else 0
+        def min(self): 
+            return min(self._d) if self._d else 0
+        def mean(self): 
+            return sum(self._d)/len(self._d) if self._d else 0
 
     @property
     def Close(self): return self._Col(self._closes)
@@ -113,8 +153,11 @@ class StockDataFetcher:
 
     def get_stock_data(self, symbol, market='us'):
         sym_clean = symbol.upper().replace('.SR','')
+
         if market == 'saudi':
-            fh_sym   = f'{sym_clean}.SR'
+            # Finnhub ما يدعم .SR بشكل موثوق - نستخدم الرمز بدون .SR
+            # أو نستخدم Yahoo Finance كبديل
+            fh_sym   = sym_clean
             currency = 'SAR'
             name     = SAUDI_NAMES.get(sym_clean, f'سهم {sym_clean}')
         else:
