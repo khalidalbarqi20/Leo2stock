@@ -17,10 +17,14 @@ class ReportGenerator:
 
     def create_chart(self, prices, symbol):
         plt.figure(figsize=(10, 6))
-        dates = list(prices.index)
+        
+        # استخراج البيانات من FakeDF
         closes = list(prices['Close'])
+        dates = list(range(len(closes)))
+        
         plt.plot(dates, closes, label='Price', color='blue', linewidth=2)
         
+        # SMA 20
         sma20 = []
         for i in range(len(closes)):
             if i >= 19:
@@ -29,6 +33,7 @@ class ReportGenerator:
                 sma20.append(None)
         plt.plot(dates, sma20, label='SMA 20', color='orange', alpha=0.7)
         
+        # SMA 50
         sma50 = []
         for i in range(len(closes)):
             if i >= 49:
