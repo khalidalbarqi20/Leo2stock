@@ -1,5 +1,5 @@
 /* ============================================
-   Leo2Stock — Modern Dark/Light Theme
+   Leo2Stock — Modern Dark/Light Theme (Fixed)
    ============================================ */
 
 :root {
@@ -460,6 +460,58 @@ body {
 .fund-label { font-size: 0.75rem; color: var(--text2); margin-bottom: 6px; }
 .fund-val { font-family: var(--font-mono); font-weight: 700; font-size: 1.1rem; }
 .fund-note { font-size: 0.72rem; color: var(--text2); margin-top: 4px; }
+
+/* ====== Fundamental Reason Box ====== */
+.fund-reason-box {
+    background: var(--card2);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    border-right: 4px solid var(--text2);
+}
+
+.fund-reason-box.up {
+    border-right-color: var(--positive);
+    background: rgba(0, 230, 118, 0.05);
+}
+
+.fund-reason-box.down {
+    border-right-color: var(--negative);
+    background: rgba(255, 23, 68, 0.05);
+}
+
+.fund-reason-box.neutral {
+    border-right-color: var(--warning);
+    background: rgba(255, 171, 64, 0.05);
+}
+
+.fund-reason-box h4 {
+    font-size: 1rem;
+    margin-bottom: 8px;
+    color: var(--text);
+}
+
+.fund-reason-box .fund-summary {
+    font-size: 0.9rem;
+    color: var(--text2);
+    margin-bottom: 10px;
+    line-height: 1.5;
+}
+
+.fund-reason-box ul {
+    list-style: none;
+    padding: 0;
+}
+
+.fund-reason-box ul li {
+    padding: 6px 0;
+    font-size: 0.85rem;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+}
+
+.fund-reason-box ul li:last-child {
+    border-bottom: none;
+}
 
 /* ====== Recommendation ====== */
 .rec-card {
