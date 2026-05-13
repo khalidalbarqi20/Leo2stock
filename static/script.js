@@ -1,5 +1,5 @@
 /* ============================================
-   Leo2Stock — Main JavaScript
+   Leo2Stock — Main JavaScript (Fixed)
    ============================================ */
 
 // ======= State =======
@@ -23,7 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') searchStock();
     });
 
-    // Request notification permission
     if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission();
     }
@@ -41,7 +40,6 @@ function toggleTheme() {
     document.body.className = isDark ? 'light' : 'dark';
     localStorage.setItem('theme', isDark ? 'light' : 'dark');
     document.getElementById('themeIcon').textContent = isDark ? '🌙' : '☀️';
-    // Re-render charts with new theme
     if (currentData) redrawCharts(currentData);
 }
 
@@ -101,6 +99,7 @@ function displayResult(data) {
     const bb = indicators.bollinger || {};
     const macd = indicators.macd || {};
     const stoch = indicators.stochastic || {};
+    const fund_reason = analysis.fundamental_reason || {};
 
     const isPositive = data.change >= 0;
 
@@ -127,7 +126,7 @@ function displayResult(data) {
     const rsi = indicators.rsi || 50;
     document.getElementById('ind-rsi').textContent = rsi;
     const rsiBar = document.getElementById('rsi-bar');
-    rsiBar.style.width = `${rsi}%`;
+    rsiBar.style.width = `${Math.min(rsi, 100)}%`;
     rsiBar.style.background = rsi < 30 ? '#00e676' : rsi > 70 ? '#ff1744' : '#00e5ff';
     document.getElementById('sig-rsi').textContent = rsi < 30 ? '🟢 تشبع بيعي' : rsi > 70 ? '🔴 تشبع شرائي' : '⚪ محايد';
     styleSignal('sig-rsi', rsi < 30 ? 'buy' : rsi > 70 ? 'sell' : 'neutral');
@@ -179,6 +178,18 @@ function displayResult(data) {
     };
     document.getElementById('fund-trend').textContent = trendMap[analysis.trend] || '—';
 
+    // Fundamental Reason - سبب الهبوط/الارتفاع
+    const fundReasonEl = document.getElementById('fund-reason');
+    if (fundReasonEl) {
+        fundReasonEl.innerHTML = `
+            <div class="fund-reason-box ${fund_reason.direction || 'neutral'}">
+                <h4>${fund_reason.title || 'الوضع الحالي'}</h4>
+                <p class="fund-summary">${fund_reason.summary || ''}</p>
+                ${fund_reason.reasons ? '<ul>' + fund_reason.reasons.map(r => `<li>${r}</li>`).join('') + '</ul>' : ''}
+            </div>
+        `;
+    }
+
     // Recommendation
     const recCard = document.getElementById('rec-card');
     const action = rec.action || 'محايد';
@@ -213,51 +224,95 @@ function displayResult(data) {
 function drawPriceChart(data) {
     const ctx = document.getElementById('priceChart').getContext('2d');
     const c = getChartColors();
+
+    // استخدم البيانات من الـ API
     const prices = data.prices_list || [];
     const dates = data.dates_list || [];
     const sma20 = data.sma20_list || [];
     const sma50 = data.sma50_list || [];
 
+    if (!prices.length) {
+        console.warn('No price data for chart');
+        return;
+    }
+
     if (priceChart) priceChart.destroy();
+
+    // إنشاء datasets
+    const datasets = [{
+        label: 'السعر',
+        data: prices,
+        borderColor: c.accent,
+        backgroundColor: 'rgba(0,229,255,0.05)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+    }];
+
+    // SMA 20
+    if (sma20.some(v => v !== null)) {
+        datasets.push({
+            label: 'SMA 20',
+            data: sma20,
+            borderColor: c.warning,
+            borderWidth: 1.5,
+            fill: false,
+            tension: 0.3,
+            pointRadius: 0,
+            borderDash: [4, 2],
+        });
+    }
+
+    // SMA 50
+    if (sma50.some(v => v !== null)) {
+        datasets.push({
+            label: 'SMA 50',
+            data: sma50,
+            borderColor: c.negative,
+            borderWidth: 1.5,
+            fill: false,
+            tension: 0.3,
+            pointRadius: 0,
+            borderDash: [6, 3],
+        });
+    }
 
     priceChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: dates,
-            datasets: [
-                {
-                    label: 'السعر',
-                    data: prices,
-                    borderColor: c.accent,
-                    backgroundColor: 'rgba(0,229,255,0.05)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.3,
-                    pointRadius: 0,
-                },
-                {
-                    label: 'SMA 20',
-                    data: sma20,
-                    borderColor: c.warning,
-                    borderWidth: 1.5,
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 0,
-                    borderDash: [4, 2],
-                },
-                {
-                    label: 'SMA 50',
-                    data: sma50,
-                    borderColor: c.negative,
-                    borderWidth: 1.5,
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 0,
-                    borderDash: [6, 3],
-                }
-            ]
+            datasets: datasets
         },
-        options: chartOptions(c, 'السعر')
+        options: {
+            responsive: true,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+                legend: {
+                    labels: { color: c.text, font: { family: 'Cairo', size: 11 }, boxWidth: 16 }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(20,29,46,0.95)',
+                    titleColor: c.text,
+                    bodyColor: c.text,
+                    borderColor: c.accent,
+                    borderWidth: 1,
+                    padding: 10,
+                    rtl: true,
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: c.grid },
+                    ticks: { color: c.text, font: { size: 10 }, maxTicksLimit: 8 }
+                },
+                y: {
+                    grid: { color: c.grid },
+                    ticks: { color: c.text, font: { size: 10 } },
+                }
+            }
+        }
     });
 }
 
@@ -266,6 +321,11 @@ function drawRsiChart(data) {
     const c = getChartColors();
     const rsiList = data.rsi_list || [];
     const dates = data.dates_list || [];
+
+    if (!rsiList.length) {
+        console.warn('No RSI data for chart');
+        return;
+    }
 
     if (rsiChart) rsiChart.destroy();
 
@@ -282,10 +342,24 @@ function drawRsiChart(data) {
                 fill: true,
                 tension: 0.3,
                 pointRadius: 0,
+                pointHoverRadius: 4,
             }]
         },
         options: {
-            ...chartOptions(c, 'RSI'),
+            responsive: true,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(20,29,46,0.95)',
+                    titleColor: c.text,
+                    bodyColor: c.text,
+                    borderColor: '#7c4dff',
+                    borderWidth: 1,
+                    padding: 10,
+                    rtl: true,
+                }
+            },
             scales: {
                 x: {
                     display: false,
@@ -295,18 +369,6 @@ function drawRsiChart(data) {
                     max: 100,
                     grid: { color: c.grid },
                     ticks: { color: c.text, font: { size: 10 } },
-                    afterDataLimits(scale) {
-                        // draw 30/70 lines
-                    }
-                }
-            },
-            plugins: {
-                ...chartOptions(c, '').plugins,
-                annotation: {
-                    annotations: {
-                        ob: { type: 'line', yMin: 70, yMax: 70, borderColor: 'rgba(255,23,68,0.5)', borderWidth: 1, borderDash: [4] },
-                        os: { type: 'line', yMin: 30, yMax: 30, borderColor: 'rgba(0,230,118,0.5)', borderWidth: 1, borderDash: [4] },
-                    }
                 }
             }
         }
@@ -321,7 +383,15 @@ function drawMacdChart(data) {
     const histList = data.histogram_list || [];
     const dates = data.dates_list || [];
 
+    if (!macdList.length) {
+        console.warn('No MACD data for chart');
+        return;
+    }
+
     if (macdChart) macdChart.destroy();
+
+    // Histogram colors
+    const histColors = histList.map(v => v >= 0 ? 'rgba(0,230,118,0.6)' : 'rgba(255,23,68,0.6)');
 
     macdChart = new Chart(ctx, {
         type: 'bar',
@@ -331,7 +401,7 @@ function drawMacdChart(data) {
                 {
                     label: 'Histogram',
                     data: histList,
-                    backgroundColor: histList.map(v => v >= 0 ? 'rgba(0,230,118,0.6)' : 'rgba(255,23,68,0.6)'),
+                    backgroundColor: histColors,
                     type: 'bar',
                     order: 2,
                 },
@@ -359,40 +429,34 @@ function drawMacdChart(data) {
                 }
             ]
         },
-        options: chartOptions(c, 'MACD')
-    });
-}
-
-function chartOptions(c, yLabel) {
-    return {
-        responsive: true,
-        interaction: { intersect: false, mode: 'index' },
-        plugins: {
-            legend: {
-                labels: { color: c.text, font: { family: 'Cairo', size: 11 }, boxWidth: 16 }
+        options: {
+            responsive: true,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+                legend: {
+                    labels: { color: c.text, font: { family: 'Cairo', size: 11 }, boxWidth: 16 }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(20,29,46,0.95)',
+                    titleColor: c.text,
+                    bodyColor: c.text,
+                    borderColor: c.accent,
+                    borderWidth: 1,
+                    padding: 10,
+                    rtl: true,
+                }
             },
-            tooltip: {
-                backgroundColor: 'rgba(20,29,46,0.95)',
-                titleColor: c.text,
-                bodyColor: c.text,
-                borderColor: c.accent,
-                borderWidth: 1,
-                padding: 10,
-                rtl: true,
-            }
-        },
-        scales: {
-            x: {
-                grid: { color: c.grid },
-                ticks: { color: c.text, font: { size: 10 }, maxTicksLimit: 8 }
-            },
-            y: {
-                grid: { color: c.grid },
-                ticks: { color: c.text, font: { size: 10 } },
-                title: yLabel ? { display: true, text: yLabel, color: c.text2 } : undefined
+            scales: {
+                x: {
+                    display: false,
+                },
+                y: {
+                    grid: { color: c.grid },
+                    ticks: { color: c.text, font: { size: 10 } },
+                }
             }
         }
-    };
+    });
 }
 
 function redrawCharts(data) {
@@ -416,7 +480,8 @@ function updateChartPeriod(period, btn) {
                 drawRsiChart(currentData);
                 drawMacdChart(currentData);
             }
-        });
+        })
+        .catch(err => console.error('Chart data error:', err));
 }
 
 // ======= Market Overview =======
@@ -437,11 +502,11 @@ async function loadMarketOverview() {
                 ${d.map(s => `
                     <div class="stock-row" onclick="loadStock('${s.symbol}')">
                         <div>
-                            <div class="stock-row-sym">${s.symbol.replace('.SR','')}</div>
+                            <div class="stock-row-sym">${s.symbol.replace('.SR', '')}</div>
                             <div class="stock-row-name">${s.name || s.symbol}</div>
                         </div>
                         <div>
-                            <div class="stock-row-price">${s.price}</div>
+                            <div class="stock-row-price">${formatPrice(s.price, s.currency)}</div>
                             <div class="stock-row-change ${s.change >= 0 ? 'positive' : 'negative'}">${s.change >= 0 ? '+' : ''}${s.change}%</div>
                         </div>
                     </div>
@@ -569,7 +634,7 @@ function renderAlertsPanel() {
 
 function startAlertChecker() {
     if (alertInterval) clearInterval(alertInterval);
-    alertInterval = setInterval(checkAlerts, 60000); // check every minute
+    alertInterval = setInterval(checkAlerts, 60000);
 }
 
 async function checkAlerts() {
@@ -640,7 +705,7 @@ function downloadReport() {
 
 // ======= Helpers =======
 function formatPrice(val, currency) {
-    if (val === null || val === undefined) return '—';
+    if (val === null || val === undefined || val === '—') return '—';
     const sym = currency === 'SAR' ? 'ر.س' : '$';
     return `${sym}${parseFloat(val).toFixed(2)}`;
 }
