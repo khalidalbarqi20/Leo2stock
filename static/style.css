@@ -1,5 +1,6 @@
 /* ============================================
-   Leo2Stock — Modern Dark/Light Theme (Fixed)
+   Leo2Stock — Modern Dark/Light Theme (Enhanced v2)
+   With RSI Scanner, Targets, Candlestick Chart
    ============================================ */
 
 :root {
@@ -278,6 +279,113 @@ body {
 
 .card-header h3 { font-size: 1rem; font-weight: 700; }
 
+/* ====== RSI Scanner ====== */
+.rsi-scanner-section { margin-bottom: 30px; }
+
+.scanner-card { padding: 20px 24px; }
+
+.scanner-controls {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.scanner-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.scanner-input-group label {
+    font-size: 0.8rem;
+    color: var(--text2);
+    font-weight: 600;
+}
+
+.scanner-input-group input,
+.scanner-input-group select {
+    padding: 10px 14px;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-main);
+    font-size: 0.95rem;
+    outline: none;
+    min-width: 120px;
+}
+
+.scanner-input-group input:focus,
+.scanner-input-group select:focus { border-color: var(--accent); }
+
+.scanner-btn {
+    padding: 10px 24px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #000;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-main);
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.scanner-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,229,255,0.3); }
+
+.rsi-results { margin-top: 20px; }
+
+.rsi-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.rsi-table th {
+    text-align: right;
+    padding: 12px;
+    background: var(--card2);
+    color: var(--text2);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+}
+
+.rsi-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.rsi-table tr:hover { background: var(--card2); }
+
+.rec-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.rec-badge.green { background: rgba(0,230,118,0.2); color: #00e676; }
+.rec-badge.lightgreen { background: rgba(0,230,118,0.1); color: #69f0ae; }
+.rec-badge.red { background: rgba(255,23,68,0.2); color: #ff1744; }
+.rec-badge.orange { background: rgba(255,171,64,0.2); color: #ffab40; }
+.rec-badge.gray { background: rgba(255,255,255,0.05); color: var(--text2); }
+
+.mini-btn {
+    padding: 6px 14px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 20px;
+    font-family: var(--font-main);
+    font-weight: 600;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.mini-btn:hover { transform: scale(1.05); }
+
 /* ====== Stock Card ====== */
 .result-section { display: flex; flex-direction: column; gap: 20px; margin-bottom: 40px; }
 
@@ -363,14 +471,123 @@ body {
 
 .action-btn:hover { transform: translateY(-2px); filter: brightness(1.2); }
 
-/* ====== Charts ====== */
-.charts-row {
+/* ====== Targets Card ====== */
+.targets-card { margin-bottom: 10px; }
+
+.targets-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.target-item {
+    background: var(--card2);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    text-align: center;
+    border: 1px solid var(--border);
+    transition: var(--transition);
+}
+
+.target-item:hover { transform: translateY(-2px); border-color: rgba(0,229,255,0.2); }
+
+.target-item.target-buy { border-top: 3px solid var(--positive); }
+.target-item.target-stop { border-top: 3px solid var(--negative); }
+
+.target-label {
+    font-size: 0.75rem;
+    color: var(--text2);
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.target-val {
+    font-family: var(--font-mono);
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+
+.target-buy .target-val { color: var(--positive); }
+.target-stop .target-val { color: var(--negative); }
+
+.supports-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.support-item {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.support-label { font-size: 0.8rem; color: var(--text2); }
+.support-val { font-family: var(--font-mono); font-weight: 700; font-size: 0.9rem; color: var(--accent); }
+
+/* ====== Charts ====== */
+.main-chart-card {
+    min-height: 500px;
+}
+
+.main-chart-card .chart-wrapper {
+    height: 450px;
+    position: relative;
+}
+
+.volume-chart-card {
+    min-height: 180px;
+}
+
+.volume-chart-card .chart-wrapper {
+    height: 140px;
+    position: relative;
+}
+
+.secondary-charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 20px;
 }
 
-.chart-card canvas { width: 100% !important; }
+.secondary-charts .chart-card {
+    min-height: 250px;
+}
+
+.secondary-charts canvas {
+    height: 200px !important;
+}
+
+.chart-wrapper canvas {
+    width: 100% !important;
+}
+
+.chart-legend {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--text2);
+}
+
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
 
 .chart-controls { display: flex; gap: 6px; }
 
@@ -788,6 +1005,9 @@ body {
     .markets-grid { grid-template-columns: 1fr; }
     .indicator-row { grid-template-columns: 90px 1fr 70px; }
     .indicator-row .ind-signal { display: none; }
+    .targets-grid { grid-template-columns: repeat(3, 1fr); }
+    .secondary-charts { grid-template-columns: 1fr; }
+    .main-chart-card .chart-wrapper { height: 350px; }
 }
 
 @media (max-width: 600px) {
@@ -798,4 +1018,9 @@ body {
     .fundamental-grid { grid-template-columns: 1fr; }
     .stock-header-row { flex-direction: column; }
     .stock-price-block { text-align: right; }
+    .targets-grid { grid-template-columns: repeat(2, 1fr); }
+    .scanner-controls { flex-direction: column; align-items: stretch; }
+    .scanner-input-group { width: 100%; }
+    .scanner-input-group input, .scanner-input-group select { width: 100%; }
+    .main-chart-card .chart-wrapper { height: 300px; }
 }
