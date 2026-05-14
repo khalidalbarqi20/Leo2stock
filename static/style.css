@@ -1283,3 +1283,284 @@ body.light .crosshair-info {
     .crosshair-info { min-width: 150px; padding: 8px; }
     .crosshair-row { font-size: 0.7rem; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════
+   PHASE 2 — NEW STYLES
+   Backtesting, Risk Management, News, Multi-Timeframe, Alerts
+   ═══════════════════════════════════════════════════════════ */
+
+/* ====== Phase Badge ====== */
+.phase-badge {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #000;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-right: 10px;
+}
+
+/* ====== Market Sentiment Bar ====== */
+.market-sentiment-bar {
+    margin-bottom: 20px;
+    padding: 14px 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.sentiment-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.sentiment-label { font-size: 0.85rem; color: var(--text2); font-weight: 600; }
+.sentiment-val { font-family: var(--font-mono); font-weight: 700; font-size: 1.1rem; color: var(--accent); }
+.sentiment-mood { padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; }
+.sentiment-vix { font-size: 0.8rem; color: var(--text2); }
+
+/* ====== News Card ====== */
+.news-card { margin-bottom: 10px; }
+
+.sentiment-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.news-content { display: flex; flex-direction: column; gap: 10px; }
+
+.news-item {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    background: var(--card2);
+    border-radius: var(--radius-sm);
+    border-right: 3px solid var(--border);
+    transition: var(--transition);
+}
+
+.news-item:hover { border-right-color: var(--accent); }
+
+.news-item.positive { border-right-color: var(--positive); }
+.news-item.negative { border-right-color: var(--negative); }
+.news-item.neutral { border-right-color: var(--warning); }
+
+.news-item-sentiment {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 50px;
+}
+
+.sentiment-icon { font-size: 1.5rem; }
+.sentiment-score { font-size: 0.7rem; color: var(--text2); margin-top: 4px; }
+
+.news-item-content { flex: 1; }
+.news-item-headline { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; line-height: 1.4; }
+.news-item-summary { font-size: 0.8rem; color: var(--text2); line-height: 1.4; }
+.news-item-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 0.72rem; color: var(--text2); }
+
+.news-loading { text-align: center; padding: 20px; color: var(--text2); }
+
+/* ====== Multi-Timeframe Card ====== */
+.mtf-card { margin-bottom: 10px; }
+
+.confluence-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.mtf-content { display: flex; flex-direction: column; gap: 16px; }
+
+.mtf-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.mtf-item {
+    background: var(--card2);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    text-align: center;
+    border: 1px solid var(--border);
+    transition: var(--transition);
+}
+
+.mtf-item:hover { transform: translateY(-2px); }
+
+.mtf-item.bullish { border-top: 3px solid var(--positive); }
+.mtf-item.bearish { border-top: 3px solid var(--negative); }
+.mtf-item.neutral { border-top: 3px solid var(--warning); }
+
+.mtf-timeframe { font-size: 0.75rem; color: var(--text2); margin-bottom: 8px; }
+.mtf-trend { font-family: var(--font-mono); font-weight: 700; font-size: 1.1rem; margin-bottom: 6px; }
+.mtf-trend.bullish { color: var(--positive); }
+.mtf-trend.bearish { color: var(--negative); }
+.mtf-trend.neutral { color: var(--warning); }
+
+.mtf-signal {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: inline-block;
+}
+
+.mtf-details {
+    margin-top: 10px;
+    font-size: 0.75rem;
+    color: var(--text2);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mtf-recommendation {
+    background: var(--card2);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    border-right: 3px solid var(--accent);
+}
+
+.mtf-rec-title { font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.mtf-rec-text { font-size: 0.9rem; color: var(--text); line-height: 1.5; }
+.mtf-rec-confidence { margin-top: 8px; font-size: 0.8rem; color: var(--text2); }
+
+/* ====== Risk Card ====== */
+.risk-card { margin-bottom: 10px; }
+
+.risk-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+.risk-item {
+    background: var(--card2);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    text-align: center;
+}
+
+.risk-label { font-size: 0.75rem; color: var(--text2); margin-bottom: 8px; display: block; }
+.risk-val { font-family: var(--font-mono); font-weight: 700; font-size: 1.3rem; display: block; margin-bottom: 4px; }
+.risk-grade {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.risk-sublabel { font-size: 0.7rem; color: var(--text2); }
+
+/* ====== Backtest Results Card ====== */
+.backtest-results-card { margin-bottom: 10px; }
+.backtest-results-card.hidden { display: none; }
+
+.backtest-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.backtest-stat {
+    background: var(--card2);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    text-align: center;
+}
+
+.backtest-stat-label { font-size: 0.75rem; color: var(--text2); margin-bottom: 6px; display: block; }
+.backtest-stat-val { font-family: var(--font-mono); font-weight: 700; font-size: 1.2rem; display: block; }
+.backtest-stat-val.positive { color: var(--positive); }
+.backtest-stat-val.negative { color: var(--negative); }
+
+.backtest-chart-wrap { height: 250px; }
+.backtest-chart-wrap canvas { width: 100% !important; height: 100% !important; }
+
+/* ====== Backtest Panel ====== */
+.backtest-form { margin-bottom: 20px; }
+.backtest-panel-results { margin-top: 20px; }
+
+/* ====== Risk Panel ====== */
+.risk-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+}
+
+.risk-tab-btn {
+    padding: 8px 16px;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    border-radius: 20px;
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.risk-tab-btn.active, .risk-tab-btn:hover {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+}
+
+.risk-tab-content { display: block; }
+.risk-tab-content.hidden { display: none; }
+
+/* Portfolio Position */
+.portfolio-position {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.portfolio-position input {
+    padding: 8px 12px;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+}
+
+/* ====== Action Buttons (New) ====== */
+.btn-backtest { background: rgba(0,230,118,0.1); color: var(--positive); border: 1px solid rgba(0,230,118,0.3); }
+.btn-risk { background: rgba(255,23,68,0.1); color: var(--negative); border: 1px solid rgba(255,23,68,0.3); }
+
+/* ====== Alert Actions ====== */
+.alert-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+/* ====== Responsive for Phase 2 ====== */
+@media (max-width: 900px) {
+    .mtf-grid { grid-template-columns: 1fr; }
+    .risk-grid { grid-template-columns: repeat(2, 1fr); }
+    .backtest-grid { grid-template-columns: repeat(2, 1fr); }
+    .sentiment-content { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 600px) {
+    .mtf-grid { grid-template-columns: 1fr; }
+    .risk-grid { grid-template-columns: 1fr; }
+    .backtest-grid { grid-template-columns: 1fr; }
+    .portfolio-position { grid-template-columns: 1fr 1fr; }
+}
