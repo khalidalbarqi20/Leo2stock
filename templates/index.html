@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leo2Stock — المحلل الذكي | المرحلة 2</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="dark">
+
+<!-- Navbar -->
+<nav class="navbar">
+    <div class="nav-brand">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">Leo2<strong>Stock</strong></span>
+        <span class="phase-badge">v2.0</span>
+    </div>
+    <div class="nav-actions">
+        <button class="nav-btn" onclick="openTab('watchlist-tab')" title="المحفظة">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span class="badge" id="watchlistBadge">0</span>
+        </button>
+        <button class="nav-btn" onclick="openTab('alerts-tab')" title="التنبيهات">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="badge alert-badge" id="alertsBadge">0</span>
+        </button>
+        <button class="nav-btn" onclick="openTab('backtest-tab')" title="Backtesting">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </button>
+        <button class="nav-btn" onclick="openTab('risk-tab')" title="إدارة المخاطر">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </button>
+        <button class="theme-toggle" onclick="toggleTheme()" title="تبديل الوضع">
+            <span id="themeIcon">☀️</span>
+        </button>
+    </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-content">
+        <h1 class="hero-title">المحلل الفني <span class="accent">الذكي</span></h1>
+        <p class="hero-sub">تحليل متقدم للأسهم الأمريكية والسعودية | Backtesting | إدارة المخاطر | أخبار | Multi-Timeframe</p>
+        <div class="search-container">
+            <div class="search-box">
+                <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="symbolInput" placeholder="ابحث عن سهم... (مثال: AAPL, 2222, TSLA)" autocomplete="off">
+                <button class="search-btn" onclick="searchStock()">تحليل</button>
+            </div>
+            <div class="market-pills">
+                <button class="pill active" onclick="switchMarket('all', this)">الكل</button>
+                <button class="pill" onclick="switchMarket('saudi', this)">🇸🇦 السعودي</button>
+                <button class="pill" onclick="switchMarket('us', this)">🇺🇸 الأمريكي</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading -->
+<div id="loading" class="loading-overlay hidden">
+    <div class="loader-ring"></div>
+    <p>جاري جلب البيانات وتحليلها...</p>
+</div>
+
+<!-- Main Content -->
+<main class="main-content">
+
+    <!-- Market Sentiment Bar -->
+    <section class="market-sentiment-bar hidden" id="marketSentimentBar">
+        <div class="sentiment-content">
+            <span class="sentiment-label">📊 مؤشر الخوف والجشع:</span>
+            <span class="sentiment-val" id="sentimentValue">—</span>
+            <span class="sentiment-mood" id="sentimentMood">—</span>
+            <span class="sentiment-vix">VIX تقديري: <span id="vixValue">—</span></span>
+        </div>
+    </section>
+
+    <!-- RSI Scanner Section -->
+    <section class="rsi-scanner-section">
+        <div class="card scanner-card">
+            <div class="card-header">
+                <h3>🔍 مسح الأسهم حسب RSI</h3>
+            </div>
+            <div class="scanner-controls">
+                <div class="scanner-input-group">
+                    <label>قيمة RSI الأقصى:</label>
+                    <input type="number" id="rsiInput" value="30" min="1" max="100" placeholder="30">
+                </div>
+                <div class="scanner-input-group">
+                    <label>السوق:</label>
+                    <select id="rsiMarket">
+                        <option value="saudi">🇸🇦 السعودي</option>
+                        <option value="us">🇺🇸 الأمريكي</option>
+                    </select>
+                </div>
+                <button class="scanner-btn" onclick="runRsiScan()">🔍 بحث</button>
+            </div>
+            <div id="rsiResults" class="rsi-results hidden">
+                <table class="rsi-table">
+                    <thead>
+                        <tr>
+                            <th>الرمز</th>
+                            <th>الاسم</th>
+                            <th>السعر</th>
+                            <th>التغير</th>
+                            <th>RSI</th>
+                            <th>التوصية</th>
+                            <th>إجراء</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rsiTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Result Section -->
+    <section id="result" class="result-section hidden">
+
+        <!-- Stock Header -->
+        <div class="stock-card card">
+            <div class="stock-header-row">
+                <div class="stock-identity">
+                    <div class="stock-ticker" id="res-symbol">—</div>
+                    <div class="stock-fullname" id="res-name">—</div>
+                    <div class="stock-meta">
+                        <span class="meta-tag" id="res-sector">—</span>
+                        <span class="meta-tag" id="res-market">—</span>
+                        <span class="meta-tag" id="res-industry">—</span>
+                    </div>
+                </div>
+                <div class="stock-price-block">
+                    <div class="main-price" id="res-price">—</div>
+                    <div class="price-delta" id="res-change">—</div>
+                    <div class="price-currency" id="res-currency">—</div>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="quick-stats">
+                <div class="stat"><span class="stat-label">الافتتاح</span><span class="stat-val" id="res-open">—</span></div>
+                <div class="stat"><span class="stat-label">أعلى اليوم</span><span class="stat-val positive" id="res-high">—</span></div>
+                <div class="stat"><span class="stat-label">أدنى اليوم</span><span class="stat-val negative" id="res-low">—</span></div>
+                <div class="stat"><span class="stat-label">حجم التداول</span><span class="stat-val" id="res-volume">—</span></div>
+                <div class="stat"><span class="stat-label">أعلى 52 أسبوع</span><span class="stat-val" id="res-high52">—</span></div>
+                <div class="stat"><span class="stat-label">أدنى 52 أسبوع</span><span class="stat-val" id="res-low52">—</span></div>
+            </div>
+
+            <!-- Volume Analysis Bar -->
+            <div class="volume-analysis-bar">
+                <div class="volume-bar-header">
+                    <span class="vol-label">📊 حجم التداول اليوم</span>
+                    <span class="vol-comparison" id="volume-comparison">—</span>
+                </div>
+                <div class="volume-bar-wrap">
+                    <div class="volume-bar-fill" id="volume-bar-fill"></div>
+                </div>
+                <div class="volume-bar-legend">
+                    <span>أقل من المتوسط</span>
+                    <span>المتوسط</span>
+                    <span>أعلى من المتوسط</span>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="stock-actions">
+                <button class="action-btn btn-watch" onclick="addToWatchlist()">⭐ إضافة للمفضلة</button>
+                <button class="action-btn btn-alert" onclick="openAlertModal()">🔔 تنبيه سعري</button>
+                <button class="action-btn btn-report" onclick="downloadReport()">📄 تقرير PDF</button>
+                <button class="action-btn btn-backtest" onclick="openBacktestPanel()">📈 Backtest</button>
+                <button class="action-btn btn-risk" onclick="openRiskPanel()">🛡️ إدارة المخاطر</button>
+            </div>
+        </div>
+
+        <!-- News & Sentiment Card -->
+        <div class="card news-card">
+            <div class="card-header">
+                <h3>📰 الأخبار والمشاعر</h3>
+                <span class="sentiment-badge" id="newsSentimentBadge">—</span>
+            </div>
+            <div class="news-content" id="news-content">
+                <div class="news-loading">جاري جلب الأخبار...</div>
+            </div>
+        </div>
+
+        <!-- Multi-Timeframe Analysis Card -->
+        <div class="card mtf-card">
+            <div class="card-header">
+                <h3>⏱️ تحليل متعدد الفريمات</h3>
+                <span class="confluence-badge" id="confluenceBadge">—</span>
+            </div>
+            <div class="mtf-content" id="mtf-content">
+                <div class="mtf-grid" id="mtf-grid"></div>
+                <div class="mtf-recommendation" id="mtf-recommendation"></div>
+            </div>
+        </div>
+
+        <!-- Risk Analysis Card -->
+        <div class="card risk-card">
+            <div class="card-header">
+                <h3>🛡️ تحليل المخاطر</h3>
+            </div>
+            <div class="risk-content" id="risk-content">
+                <div class="risk-grid">
+                    <div class="risk-item">
+                        <span class="risk-label">Risk/Reward</span>
+                        <span class="risk-val" id="risk-ratio">—</span>
+                        <span class="risk-grade" id="risk-grade">—</span>
+                    </div>
+                    <div class="risk-item">
+                        <span class="risk-label">حجم المركز المُوصى به</span>
+                        <span class="risk-val" id="risk-position">—</span>
+                        <span class="risk-sublabel" id="risk-position-detail">—</span>
+                    </div>
+                    <div class="risk-item">
+                        <span class="risk-label">وقف الخسارة</span>
+                        <span class="risk-val" id="risk-stop">—</span>
+                        <span class="risk-sublabel" id="risk-stop-detail">—</span>
+                    </div>
+                    <div class="risk-item">
+                        <span class="risk-label">الهدف المتوقع</span>
+                        <span class="risk-val" id="risk-target">—</span>
+                        <span class="risk-sublabel" id="risk-target-detail">—</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Analysis Card -->
+        <div class="card ai-analysis-card">
+            <div class="card-header">
+                <h3>🤖 تحليل AI للسهم</h3>
+                <span class="ai-badge">AI Powered</span>
+            </div>
+            <div class="ai-content" id="ai-analysis-content">
+                <div class="ai-loading">
+                    <div class="ai-pulse"></div>
+                    <p>جاري تحليل البيانات بالذكاء الاصطناعي...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Earnings Date Card -->
+        <div class="card earnings-card">
+            <div class="card-header">
+                <h3>📅 مواعيد الأرباح</h3>
+            </div>
+            <div class="earnings-content" id="earnings-content">
+                <div class="earnings-item">
+                    <span class="earnings-label">تاريخ الإعلان القادم:</span>
+                    <span class="earnings-val" id="earnings-date">—</span>
+                </div>
+                <div class="earnings-item">
+                    <span class="earnings-label">الربع المالي:</span>
+                    <span class="earnings-val" id="earnings-quarter">—</span>
+                </div>
+                <div class="earnings-item">
+                    <span class="earnings-label">التوقعات:</span>
+                    <span class="earnings-val" id="earnings-estimate">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Targets Card -->
+        <div class="card targets-card">
+            <div class="card-header"><h3>🎯 الأهداف المتوقعة</h3></div>
+            <div class="targets-grid">
+                <div class="target-item target-buy">
+                    <div class="target-label">🟢 هدف 1</div>
+                    <div class="target-val" id="target-1">—</div>
+                </div>
+                <div class="target-item target-buy">
+                    <div class="target-label">🟢 هدف 2</div>
+                    <div class="target-val" id="target-2">—</div>
+                </div>
+                <div class="target-item target-buy">
+                    <div class="target-label">🟢 هدف 3</div>
+                    <div class="target-val" id="target-3">—</div>
+                </div>
+                <div class="target-item target-buy">
+                    <div class="target-label">🟢 هدف 4</div>
+                    <div class="target-val" id="target-4">—</div>
+                </div>
+                <div class="target-item target-stop">
+                    <div class="target-label">🔴 وقف الخسارة</div>
+                    <div class="target-val" id="target-stop">—</div>
+                </div>
+            </div>
+            <div class="supports-row">
+                <div class="support-item">
+                    <span class="support-label">دعم 1:</span>
+                    <span class="support-val" id="support-1">—</span>
+                </div>
+                <div class="support-item">
+                    <span class="support-label">دعم 2:</span>
+                    <span class="support-val" id="support-2">—</span>
+                </div>
+                <div class="support-item">
+                    <span class="support-label">دعم 3:</span>
+                    <span class="support-val" id="support-3">—</span>
+                </div>
+                <div class="support-item">
+                    <span class="support-label">دعم 4:</span>
+                    <span class="support-val" id="support-4">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Candlestick Chart (Full Width) -->
+        <div class="card chart-card main-chart-card">
+            <div class="card-header">
+                <h3>📈 مخطط الشموع اليابانية</h3>
+                <div class="chart-controls">
+                    <button class="chart-btn active" onclick="updateChartPeriod('1mo', this)">شهر</button>
+                    <button class="chart-btn" onclick="updateChartPeriod('3mo', this)">3 أشهر</button>
+                    <button class="chart-btn" onclick="updateChartPeriod('6mo', this)">6 أشهر</button>
+                    <button class="chart-btn" onclick="updateChartPeriod('1y', this)">سنة</button>
+                </div>
+            </div>
+            <!-- Indicator Toggles -->
+            <div class="indicator-toggles">
+                <label class="toggle-item">
+                    <input type="checkbox" id="toggle-sma7" checked onchange="toggleIndicator('sma7')">
+                    <span class="toggle-label">SMA 7</span>
+                </label>
+                <label class="toggle-item">
+                    <input type="checkbox" id="toggle-sma20" checked onchange="toggleIndicator('sma20')">
+                    <span class="toggle-label">SMA 20</span>
+                </label>
+                <label class="toggle-item">
+                    <input type="checkbox" id="toggle-sma50" checked onchange="toggleIndicator('sma50')">
+                    <span class="toggle-label">SMA 50</span>
+                </label>
+                <label class="toggle-item">
+                    <input type="checkbox" id="toggle-sma200" checked onchange="toggleIndicator('sma200')">
+                    <span class="toggle-label">SMA 200</span>
+                </label>
+                <label class="toggle-item">
+                    <input type="checkbox" id="toggle-fibonacci" onchange="toggleIndicator('fibonacci')">
+                    <span class="toggle-label">فيبوناتشي</span>
+                </label>
+                <label class="toggle-item">
+                    <input type="checkbox" id="toggle-bollinger" onchange="toggleIndicator('bollinger')">
+                    <span class="toggle-label">بولينجر</span>
+                </label>
+                <label class="toggle-item">
+                    <input type="checkbox" id="toggle-targets" checked onchange="toggleIndicator('targets')">
+                    <span class="toggle-label">الأهداف</span>
+                </label>
+            </div>
+            <div class="chart-wrapper" id="mainChartWrapper">
+                <canvas id="candlestickChart"></canvas>
+                <!-- Crosshair Info -->
+                <div class="crosshair-info hidden" id="crosshairInfo">
+                    <div class="crosshair-row">
+                        <span class="crosshair-label">التاريخ:</span>
+                        <span class="crosshair-val" id="crosshair-date">—</span>
+                    </div>
+                    <div class="crosshair-row">
+                        <span class="crosshair-label">السعر:</span>
+                        <span class="crosshair-val" id="crosshair-price">—</span>
+                    </div>
+                    <div class="crosshair-row">
+                        <span class="crosshair-label">الافتتاح:</span>
+                        <span class="crosshair-val" id="crosshair-open">—</span>
+                    </div>
+                    <div class="crosshair-row">
+                        <span class="crosshair-label">الأعلى:</span>
+                        <span class="crosshair-val" id="crosshair-high">—</span>
+                    </div>
+                    <div class="crosshair-row">
+                        <span class="crosshair-label">الأدنى:</span>
+                        <span class="crosshair-val" id="crosshair-low">—</span>
+                    </div>
+                    <div class="crosshair-row">
+                        <span class="crosshair-label">الإغلاق:</span>
+                        <span class="crosshair-val" id="crosshair-close">—</span>
+                    </div>
+                    <div class="crosshair-row">
+                        <span class="crosshair-label">الحجم:</span>
+                        <span class="crosshair-val" id="crosshair-volume">—</span>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#00e5ff"></span> السعر</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#ffab40"></span> SMA 7</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#7c4dff"></span> SMA 20</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#ff1744"></span> SMA 50</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span> SMA 200</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#ffd700"></span> فيبوناتشي</span>
+            </div>
+        </div>
+
+        <!-- Volume Chart -->
+        <div class="card chart-card volume-chart-card">
+            <div class="card-header"><h3>📊 حجم التداول</h3></div>
+            <div class="chart-wrapper">
+                <canvas id="volumeChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Secondary Charts Row -->
+        <div class="charts-row secondary-charts">
+            <!-- RSI Chart -->
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h3>⚡ RSI</h3>
+                    <label class="toggle-mini">
+                        <input type="checkbox" id="toggle-rsi-chart" checked onchange="toggleSecondaryChart('rsi')">
+                        <span>إظهار</span>
+                    </label>
+                </div>
+                <canvas id="rsiChart"></canvas>
+                <div class="rsi-zones">
+                    <span class="zone overbought">تشبع شرائي &gt;70</span>
+                    <span class="zone oversold">تشبع بيعي &lt;30</span>
+                </div>
+            </div>
+
+            <!-- MACD Chart -->
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h3>📊 MACD</h3>
+                    <label class="toggle-mini">
+                        <input type="checkbox" id="toggle-macd-chart" checked onchange="toggleSecondaryChart('macd')">
+                        <span>إظهار</span>
+                    </label>
+                </div>
+                <canvas id="macdChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Fibonacci Levels Card -->
+        <div class="card fibonacci-card">
+            <div class="card-header"><h3>📐 مستويات فيبوناتشي</h3></div>
+            <div class="fibonacci-grid" id="fibonacci-grid">
+                <div class="fib-item">
+                    <span class="fib-level">0% (قمة)</span>
+                    <span class="fib-val" id="fib-0">—</span>
+                </div>
+                <div class="fib-item">
+                    <span class="fib-level">23.6%</span>
+                    <span class="fib-val" id="fib-236">—</span>
+                </div>
+                <div class="fib-item">
+                    <span class="fib-level">38.2%</span>
+                    <span class="fib-val" id="fib-382">—</span>
+                </div>
+                <div class="fib-item">
+                    <span class="fib-level">50%</span>
+                    <span class="fib-val" id="fib-500">—</span>
+                </div>
+                <div class="fib-item">
+                    <span class="fib-level">61.8%</span>
+                    <span class="fib-val" id="fib-618">—</span>
+                </div>
+                <div class="fib-item">
+                    <span class="fib-level">78.6%</span>
+                    <span class="fib-val" id="fib-786">—</span>
+                </div>
+                <div class="fib-item">
+                    <span class="fib-level">100% (قاع)</span>
+                    <span class="fib-val" id="fib-100">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Indicators + Fundamental Row -->
+        <div class="two-col-row">
+
+            <!-- Technical Indicators -->
+            <div class="card">
+                <div class="card-header"><h3>🔬 المؤشرات الفنية</h3></div>
+                <div class="indicators-list">
+
+                    <div class="indicator-row">
+                        <span class="ind-name">RSI (14)</span>
+                        <div class="ind-bar-wrap">
+                            <div class="ind-bar" id="rsi-bar"></div>
+                        </div>
+                        <span class="ind-val" id="ind-rsi">—</span>
+                        <span class="ind-signal" id="sig-rsi">—</span>
+                    </div>
+
+                    <div class="indicator-row">
+                        <span class="ind-name">SMA 20</span>
+                        <span class="ind-val" id="ind-sma20">—</span>
+                        <span class="ind-signal" id="sig-sma20">—</span>
+                    </div>
+
+                    <div class="indicator-row">
+                        <span class="ind-name">SMA 50</span>
+                        <span class="ind-val" id="ind-sma50">—</span>
+                        <span class="ind-signal" id="sig-sma50">—</span>
+                    </div>
+
+                    <div class="indicator-row">
+                        <span class="ind-name">SMA 200</span>
+                        <span class="ind-val" id="ind-sma200">—</span>
+                        <span class="ind-signal" id="sig-sma200">—</span>
+                    </div>
+
+                    <div class="indicator-row">
+                        <span class="ind-name">MACD</span>
+                        <span class="ind-val" id="ind-macd">—</span>
+                        <span class="ind-signal" id="sig-macd">—</span>
+                    </div>
+
+                    <div class="indicator-row">
+                        <span class="ind-name">Bollinger Upper</span>
+                        <span class="ind-val" id="ind-bb-upper">—</span>
+                        <span class="ind-signal" id="sig-bb">—</span>
+                    </div>
+
+                    <div class="indicator-row">
+                        <span class="ind-name">Bollinger Lower</span>
+                        <span class="ind-val" id="ind-bb-lower">—</span>
+                        <span class="ind-signal">—</span>
+                    </div>
+
+                    <div class="indicator-row">
+                        <span class="ind-name">ATR (14)</span>
+                        <span class="ind-val" id="ind-atr">—</span>
+                        <span class="ind-signal">تذبذب</span>
+                    </div>
+
+                    <div class="indicator-row">
+                        <span class="ind-name">Stochastic K</span>
+                        <span class="ind-val" id="ind-stoch-k">—</span>
+                        <span class="ind-signal" id="sig-stoch">—</span>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Fundamental Analysis -->
+            <div class="card">
+                <div class="card-header"><h3>💰 التحليل الأساسي</h3></div>
+                <div class="fundamental-grid">
+                    <div class="fund-item">
+                        <div class="fund-label">القيمة السوقية</div>
+                        <div class="fund-val" id="fund-cap">—</div>
+                    </div>
+                    <div class="fund-item">
+                        <div class="fund-label">P/E Ratio</div>
+                        <div class="fund-val" id="fund-pe">—</div>
+                        <div class="fund-note" id="fund-pe-note"></div>
+                    </div>
+                    <div class="fund-item">
+                        <div class="fund-label">القطاع</div>
+                        <div class="fund-val" id="fund-sector">—</div>
+                    </div>
+                    <div class="fund-item">
+                        <div class="fund-label">الصناعة</div>
+                        <div class="fund-val" id="fund-industry">—</div>
+                    </div>
+                    <div class="fund-item">
+                        <div class="fund-label">الدعم</div>
+                        <div class="fund-val positive" id="fund-support">—</div>
+                    </div>
+                    <div class="fund-item">
+                        <div class="fund-label">المقاومة</div>
+                        <div class="fund-val negative" id="fund-resistance">—</div>
+                    </div>
+                    <div class="fund-item">
+                        <div class="fund-label">الاتجاه</div>
+                        <div class="fund-val" id="fund-trend">—</div>
+                    </div>
+                    <div class="fund-item">
+                        <div class="fund-label">حجم التداول/المتوسط</div>
+                        <div class="fund-val" id="fund-volume-ratio">—</div>
+                    </div>
+                </div>
+
+                <div id="fund-reason" style="margin-top: 16px;"></div>
+            </div>
+        </div>
+
+        <!-- Backtest Results Card -->
+        <div class="card backtest-results-card hidden" id="backtestResultsCard">
+            <div class="card-header">
+                <h3>📈 نتائج Backtest</h3>
+                <select id="backtestStrategy" onchange="runBacktest()">
+                    <option value="sma_cross">تقاطع SMA 20/50</option>
+                    <option value="rsi_reversal">انعكاس RSI</option>
+                    <option value="macd_signal">إشارة MACD</option>
+                    <option value="bollinger_bounce">ارتداد بولينجر</option>
+                    <option value="golden_cross">الصليب الذهبي</option>
+                    <option value="combined">استراتيجية مجتمعة</option>
+                </select>
+            </div>
+            <div class="backtest-content" id="backtest-content">
+                <div class="backtest-grid" id="backtest-grid"></div>
+                <div class="backtest-chart-wrap">
+                    <canvas id="backtestChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recommendation + Signals -->
+        <div class="two-col-row">
+            <div class="card rec-card" id="rec-card">
+                <div class="rec-label">التوصية الفنية</div>
+                <div class="rec-action" id="rec-action">—</div>
+                <div class="rec-score" id="rec-score">—</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3>📡 إشارات التداول</h3></div>
+                <ul class="signals-list" id="signals-list">
+                    <li class="no-signals">لا توجد إشارات بعد</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Fundamental Impact Analysis -->
+        <div class="card impact-analysis-card">
+            <div class="card-header">
+                <h3>📰 التحليل الأساسي والأثر على السهم</h3>
+            </div>
+            <div class="impact-content" id="impact-content">
+                <div class="impact-section">
+                    <h4>🏢 معلومات الشركة</h4>
+                    <div class="impact-grid">
+                        <div class="impact-item">
+                            <span class="impact-label">القطاع:</span>
+                            <span class="impact-val" id="impact-sector">—</span>
+                        </div>
+                        <div class="impact-item">
+                            <span class="impact-label">الصناعة:</span>
+                            <span class="impact-val" id="impact-industry">—</span>
+                        </div>
+                        <div class="impact-item">
+                            <span class="impact-label">مقر الشركة:</span>
+                            <span class="impact-val" id="impact-country">—</span>
+                        </div>
+                        <div class="impact-item">
+                            <span class="impact-label">عدد الموظفين:</span>
+                            <span class="impact-val" id="impact-employees">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="impact-section">
+                    <h4>📊 الأداء المالي</h4>
+                    <div class="impact-grid">
+                        <div class="impact-item">
+                            <span class="impact-label">الإيرادات (TTM):</span>
+                            <span class="impact-val" id="impact-revenue">—</span>
+                        </div>
+                        <div class="impact-item">
+                            <span class="impact-label">صافي الربح:</span>
+                            <span class="impact-val" id="impact-profit">—</span>
+                        </div>
+                        <div class="impact-item">
+                            <span class="impact-label">هامش الربح:</span>
+                            <span class="impact-val" id="impact-margin">—</span>
+                        </div>
+                        <div class="impact-item">
+                            <span class="impact-label">العائد على حقوق الملكية (ROE):</span>
+                            <span class="impact-val" id="impact-roe">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="impact-section">
+                    <h4>📈 العوامل المؤثرة على السهم</h4>
+                    <div class="impact-factors" id="impact-factors"></div>
+                </div>
+
+                <div class="impact-section">
+                    <h4>🔮 التوقعات المستقبلية</h4>
+                    <div class="impact-outlook" id="impact-outlook"></div>
+                </div>
+            </div>
+        </div>
+
+    </section>
+
+</main>
+
+<!-- Watchlist Tab -->
+<div id="watchlist-tab" class="side-panel hidden">
+    <div class="panel-header">
+        <h3>⭐ المفضلة</h3>
+        <button class="close-btn" onclick="closePanel('watchlist-tab')">✕</button>
+    </div>
+    <div id="watchlist-items" class="panel-content">
+        <p class="empty-msg">لا توجد أسهم في المفضلة</p>
+    </div>
+</div>
+
+<!-- Alerts Tab -->
+<div id="alerts-tab" class="side-panel hidden">
+    <div class="panel-header">
+        <h3>🔔 التنبيهات السعرية</h3>
+        <button class="close-btn" onclick="closePanel('alerts-tab')">✕</button>
+    </div>
+    <div class="panel-content">
+        <div class="alert-actions">
+            <button class="mini-btn" onclick="createSmartAlerts()">🧠 تنبيهات ذكية</button>
+            <button class="mini-btn" onclick="showAddAlertForm()">➕ إضافة تنبيه</button>
+        </div>
+        <div id="alerts-items">
+            <p class="empty-msg">لا توجد تنبيهات مضافة</p>
+        </div>
+    </div>
+</div>
+
+<!-- Backtest Tab -->
+<div id="backtest-tab" class="side-panel hidden">
+    <div class="panel-header">
+        <h3>📈 Backtesting</h3>
+        <button class="close-btn" onclick="closePanel('backtest-tab')">✕</button>
+    </div>
+    <div class="panel-content">
+        <div class="backtest-form">
+            <div class="form-group">
+                <label>الاستراتيجية</label>
+                <select id="btStrategy">
+                    <option value="sma_cross">تقاطع SMA 20/50</option>
+                    <option value="rsi_reversal">انعكاس RSI</option>
+                    <option value="macd_signal">إشارة MACD</option>
+                    <option value="bollinger_bounce">ارتداد بولينجر</option>
+                    <option value="golden_cross">الصليب الذهبي</option>
+                    <option value="combined">استراتيجية مجتمعة</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>رأس المال ($)</label>
+                <input type="number" id="btCapital" value="10000" min="1000">
+            </div>
+            <div class="form-group">
+                <label>وقف الخسارة (%)</label>
+                <input type="number" id="btStopLoss" value="5" min="1" max="50" step="0.5">
+            </div>
+            <div class="form-group">
+                <label>جني الأرباح (%)</label>
+                <input type="number" id="btTakeProfit" value="10" min="1" max="100" step="0.5">
+            </div>
+            <button class="modal-save-btn" onclick="runBacktestFromPanel()">🚀 تشغيل Backtest</button>
+        </div>
+        <div id="backtest-panel-results" class="backtest-panel-results"></div>
+    </div>
+</div>
+
+<!-- Risk Management Tab -->
+<div id="risk-tab" class="side-panel hidden">
+    <div class="panel-header">
+        <h3>🛡️ إدارة المخاطر</h3>
+        <button class="close-btn" onclick="closePanel('risk-tab')">✕</button>
+    </div>
+    <div class="panel-content">
+        <div class="risk-tabs">
+            <button class="risk-tab-btn active" onclick="switchRiskTab('position')">حجم المركز</button>
+            <button class="risk-tab-btn" onclick="switchRiskTab('kelly')">Kelly</button>
+            <button class="risk-tab-btn" onclick="switchRiskTab('stoploss')">وقف الخسارة</button>
+            <button class="risk-tab-btn" onclick="switchRiskTab('portfolio')">المحفظة</button>
+        </div>
+
+        <!-- Position Size Calculator -->
+        <div id="risk-position-tab" class="risk-tab-content">
+            <div class="form-group">
+                <label>رصيد الحساب ($)</label>
+                <input type="number" id="riskAccountBalance" value="10000">
+            </div>
+            <div class="form-group">
+                <label>سعر الدخول</label>
+                <input type="number" id="riskEntryPrice" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>وقف الخسارة</label>
+                <input type="number" id="riskStopLossPrice" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>نسبة المخاطرة (%)</label>
+                <input type="number" id="riskPerTrade" value="2" min="0.1" max="10" step="0.1">
+            </div>
+            <button class="modal-save-btn" onclick="calculatePositionSize()">📊 حساب</button>
+            <div id="position-size-result"></div>
+        </div>
+
+        <!-- Kelly Calculator -->
+        <div id="risk-kelly-tab" class="risk-tab-content hidden">
+            <div class="form-group">
+                <label>نسبة الربح (0-1)</label>
+                <input type="number" id="kellyWinRate" value="0.55" min="0" max="1" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>متوسط الربح (%)</label>
+                <input type="number" id="kellyAvgWin" value="5" min="0.1" step="0.1">
+            </div>
+            <div class="form-group">
+                <label>متوسط الخسارة (%)</label>
+                <input type="number" id="kellyAvgLoss" value="3" min="0.1" step="0.1">
+            </div>
+            <button class="modal-save-btn" onclick="calculateKelly()">🎯 حساب Kelly</button>
+            <div id="kelly-result"></div>
+        </div>
+
+        <!-- Stop Loss Calculator -->
+        <div id="risk-stoploss-tab" class="risk-tab-content hidden">
+            <div class="form-group">
+                <label>سعر الدخول</label>
+                <input type="number" id="slEntryPrice" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>ATR</label>
+                <input type="number" id="slATR" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>الطريقة</label>
+                <select id="slMethod">
+                    <option value="atr">ATR-based</option>
+                    <option value="percent">نسبة ثابتة</option>
+                    <option value="support">مستوى الدعم</option>
+                </select>
+            </div>
+            <button class="modal-save-btn" onclick="calculateStopLoss()">🛑 حساب وقف الخسارة</button>
+            <div id="stoploss-result"></div>
+        </div>
+
+        <!-- Portfolio Risk -->
+        <div id="risk-portfolio-tab" class="risk-tab-content hidden">
+            <div class="form-group">
+                <label>رصيد الحساب ($)</label>
+                <input type="number" id="portfolioBalance" value="10000">
+            </div>
+            <div id="portfolio-positions">
+                <div class="portfolio-position">
+                    <input type="text" placeholder="الرمز" class="pos-symbol">
+                    <input type="number" placeholder="الكمية" class="pos-shares">
+                    <input type="number" placeholder="السعر الحالي" class="pos-price" step="0.01">
+                    <input type="number" placeholder="وقف الخسارة" class="pos-stop" step="0.01">
+                </div>
+            </div>
+            <button class="mini-btn" onclick="addPortfolioPosition()">➕ إضافة مركز</button>
+            <button class="modal-save-btn" onclick="analyzePortfolioRisk()">📊 تحليل المحفظة</button>
+            <div id="portfolio-risk-result"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Alert Modal -->
+<div id="alertModal" class="modal hidden">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3>🔔 إضافة تنبيه سعري</h3>
+            <button onclick="closeAlertModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p id="alertSymbolLabel">السهم: —</p>
+            <div class="form-group">
+                <label>نوع التنبيه</label>
+                <select id="alertType">
+                    <option value="price_above">السعر يتجاوز</option>
+                    <option value="price_below">السعر ينزل عن</option>
+                    <option value="rsi_above">RSI يتجاوز</option>
+                    <option value="rsi_below">RSI ينزل عن</option>
+                    <option value="volume_spike">ارتفاع حجم التداول</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>القيمة المستهدفة</label>
+                <input type="number" id="alertPrice" placeholder="0.00" step="0.01">
+            </div>
+            <button class="modal-save-btn" onclick="saveAlert()">حفظ التنبيه</button>
+        </div>
+    </div>
+</div>
+
+<!-- Overlay -->
+<div id="overlay" class="overlay hidden" onclick="closeAllPanels()"></div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
