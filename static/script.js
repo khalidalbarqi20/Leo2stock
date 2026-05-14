@@ -1445,3 +1445,622 @@ function showToast(msg, type = 'info') {
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3500);
 }
+
+
+/* ═══════════════════════════════════════════════════════════
+   PHASE 2 — NEW FEATURES
+   Backtesting, Risk Management, News, Multi-Timeframe, Alerts
+   ═══════════════════════════════════════════════════════════ */
+
+// ======= News & Sentiment =======
+async function loadNews(symbol) {
+    const container = document.getElementById('news-content');
+    if (!container) return;
+
+    container.innerHTML = '<div class="news-loading">جاري جلب الأخبار...</div>';
+
+    try {
+        const res = await fetch(`./api/news/${symbol}`);
+        const data = await res.json();
+
+        if (data.error) {
+            container.innerHTML = `<div class="news-loading">${data.error}</div>`;
+            return;
+        }
+
+        // Update sentiment badge
+        const sentiment = data.overall_sentiment || {};
+        const badge = document.getElementById('newsSentimentBadge');
+        if (badge) {
+            badge.textContent = sentiment.label || '—';
+            badge.style.background = sentiment.color === 'green' ? 'rgba(0,230,118,0.2)' :
+                                     sentiment.color === 'red' ? 'rgba(255,23,68,0.2)' :
+                                     sentiment.color === 'orange' ? 'rgba(255,171,64,0.2)' :
+                                     'rgba(255,255,255,0.05)';
+            badge.style.color = sentiment.color === 'green' ? '#00e676' :
+                               sentiment.color === 'red' ? '#ff1744' :
+                               sentiment.color === 'orange' ? '#ffab40' : '#8892a4';
+        }
+
+        // Render articles
+        const articles = data.articles || [];
+        if (articles.length === 0) {
+            container.innerHTML = '<div class="news-loading">لا توجد أخبار متاحة</div>';
+            return;
+        }
+
+        container.innerHTML = articles.map(article => {
+            const sentiment = article.sentiment || {};
+            const icon = sentiment.score > 0.1 ? '📈' : sentiment.score < -0.1 ? '📉' : '➖';
+            const type = sentiment.score > 0.1 ? 'positive' : sentiment.score < -0.1 ? 'negative' : 'neutral';
+
+            const date = article.datetime ? new Date(article.datetime * 1000).toLocaleDateString('ar-SA') : '';
+
+            return `
+                <div class="news-item ${type}">
+                    <div class="news-item-sentiment">
+                        <span class="sentiment-icon">${icon}</span>
+                        <span class="sentiment-score">${sentiment.label || '—'}</span>
+                    </div>
+                    <div class="news-item-content">
+                        <div class="news-item-headline">${article.headline || ''}</div>
+                        <div class="news-item-summary">${article.summary || ''}</div>
+                        <div class="news-item-meta">
+                            <span>📰 ${article.source || 'Unknown'}</span>
+                            <span>📅 ${date}</span>
+                            <span>🎯 ثقة: ${Math.round((sentiment.confidence || 0.5) * 100)}%</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        container.innerHTML = '<div class="news-loading">خطأ في جلب الأخبار</div>';
+        console.error('News error:', err);
+    }
+}
+
+// ======= Multi-Timeframe =======
+async function loadMultiTimeframe(symbol) {
+    const container = document.getElementById('mtf-grid');
+    const recContainer = document.getElementById('mtf-recommendation');
+    const badge = document.getElementById('confluenceBadge');
+
+    if (!container) return;
+
+    container.innerHTML = '<div class="news-loading">جاري التحليل...</div>';
+
+    try {
+        const res = await fetch(`./api/multi-timeframe/${symbol}`);
+        const data = await res.json();
+
+        if (data.error) {
+            container.innerHTML = `<div class="news-loading">${data.error}</div>`;
+            return;
+        }
+
+        const timeframes = data.timeframes || {};
+        const confluence = data.confluence || {};
+        const recommendation = data.recommendation || {};
+
+        // Update confluence badge
+        if (badge) {
+            badge.textContent = confluence.label || '—';
+            badge.style.background = confluence.score > 30 ? 'rgba(0,230,118,0.2)' :
+                                     confluence.score < -30 ? 'rgba(255,23,68,0.2)' :
+                                     'rgba(255,171,64,0.2)';
+            badge.style.color = confluence.score > 30 ? '#00e676' :
+                               confluence.score < -30 ? '#ff1744' : '#ffab40';
+        }
+
+        // Render timeframes
+        container.innerHTML = Object.entries(timeframes).map(([key, tf]) => {
+            const trendClass = tf.trend || 'neutral';
+            const signal = tf.signal || {};
+
+            return `
+                <div class="mtf-item ${trendClass}">
+                    <div class="mtf-timeframe">${tf.timeframe || key} — ${tf.description || ''}</div>
+                    <div class="mtf-trend ${trendClass}">
+                        ${trendClass === 'bullish' ? '📈 صاعد' :
+                          trendClass === 'bearish' ? '📉 هابط' :
+                          trendClass === 'bullish_weak' ? '📈 صاعد ضعيف' :
+                          trendClass === 'bearish_weak' ? '📉 هابط ضعيف' : '➡️ محايد'}
+                    </div>
+                    <div class="mtf-signal" style="background: ${signal.color === 'green' ? 'rgba(0,230,118,0.15)' : signal.color === 'red' ? 'rgba(255,23,68,0.15)' : 'rgba(255,255,255,0.05)'}; color: ${signal.color === 'green' ? '#00e676' : signal.color === 'red' ? '#ff1744' : '#8892a4'}">
+                        ${signal.action || '—'}
+                    </div>
+                    <div class="mtf-details">
+                        <span>RSI: ${tf.rsi || '—'}</span>
+                        <span>الزخم: ${tf.momentum_pct || 0}%</span>
+                        <span>الدعم: ${tf.support || '—'}</span>
+                        <span>المقاومة: ${tf.resistance || '—'}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Render recommendation
+        if (recContainer) {
+            recContainer.innerHTML = `
+                <div class="mtf-rec-title">🎯 التوصية المتكاملة</div>
+                <div class="mtf-rec-text">${recommendation.reason || ''}</div>
+                <div class="mtf-rec-confidence">الثقة: ${recommendation.confidence || '—'} | الأفق الزمني: ${recommendation.time_horizon || '—'}</div>
+            `;
+        }
+    } catch (err) {
+        container.innerHTML = '<div class="news-loading">خطأ في التحليل</div>';
+        console.error('MTF error:', err);
+    }
+}
+
+// ======= Risk Analysis Display =======
+function displayRiskAnalysis(riskData, positionSize) {
+    const ratioEl = document.getElementById('risk-ratio');
+    const gradeEl = document.getElementById('risk-grade');
+    const positionEl = document.getElementById('risk-position');
+    const positionDetailEl = document.getElementById('risk-position-detail');
+    const stopEl = document.getElementById('risk-stop');
+    const targetEl = document.getElementById('risk-target');
+
+    if (riskData) {
+        if (ratioEl) ratioEl.textContent = `1:${riskData.ratio || '—'}`;
+        if (gradeEl) {
+            gradeEl.textContent = riskData.grade || '—';
+            gradeEl.style.background = riskData.grade_color === 'green' ? 'rgba(0,230,118,0.15)' :
+                                       riskData.grade_color === 'red' ? 'rgba(255,23,68,0.15)' :
+                                       'rgba(255,171,64,0.15)';
+            gradeEl.style.color = riskData.grade_color === 'green' ? '#00e676' :
+                                 riskData.grade_color === 'red' ? '#ff1744' : '#ffab40';
+        }
+    }
+
+    if (positionSize) {
+        if (positionEl) positionEl.textContent = positionSize.shares ? `${positionSize.shares} سهم` : '—';
+        if (positionDetailEl) positionDetailEl.textContent = positionSize.recommended ? `قيمة: ${formatPrice(positionSize.position_value, 'USD')}` : positionSize.reason || '';
+    }
+}
+
+// ======= Backtesting =======
+let backtestChart = null;
+
+function openBacktestPanel() {
+    if (!currentSymbol) {
+        showToast('ابحث عن سهم أولاً');
+        return;
+    }
+    openTab('backtest-tab');
+}
+
+async function runBacktestFromPanel() {
+    if (!currentSymbol) {
+        showToast('ابحث عن سهم أولاً');
+        return;
+    }
+
+    const strategy = document.getElementById('btStrategy').value;
+    const capital = document.getElementById('btCapital').value;
+    const stopLoss = document.getElementById('btStopLoss').value / 100;
+    const takeProfit = document.getElementById('btTakeProfit').value / 100;
+
+    const resultsContainer = document.getElementById('backtest-panel-results');
+    resultsContainer.innerHTML = '<div class="news-loading">جاري تشغيل Backtest...</div>';
+
+    try {
+        const res = await fetch(`./api/backtest/${currentSymbol}?strategy=${strategy}&capital=${capital}&stop_loss=${stopLoss}&take_profit=${takeProfit}`);
+        const data = await res.json();
+
+        if (data.error) {
+            resultsContainer.innerHTML = `<div class="news-loading">${data.error}</div>`;
+            return;
+        }
+
+        displayBacktestResults(data, resultsContainer);
+    } catch (err) {
+        resultsContainer.innerHTML = '<div class="news-loading">خطأ في الـ Backtest</div>';
+        console.error('Backtest error:', err);
+    }
+}
+
+async function runBacktest() {
+    if (!currentSymbol) return;
+
+    const strategy = document.getElementById('backtestStrategy').value;
+    const card = document.getElementById('backtestResultsCard');
+    card.classList.remove('hidden');
+
+    const grid = document.getElementById('backtest-grid');
+    grid.innerHTML = '<div class="news-loading">جاري التشغيل...</div>';
+
+    try {
+        const res = await fetch(`./api/backtest/${currentSymbol}?strategy=${strategy}`);
+        const data = await res.json();
+
+        if (data.error) {
+            grid.innerHTML = `<div class="news-loading">${data.error}</div>`;
+            return;
+        }
+
+        displayBacktestResults(data, grid);
+        drawBacktestChart(data);
+    } catch (err) {
+        grid.innerHTML = '<div class="news-loading">خطأ</div>';
+    }
+}
+
+function displayBacktestResults(data, container) {
+    const isPositive = data.total_return_pct >= 0;
+
+    const html = `
+        <div class="backtest-stat">
+            <span class="backtest-stat-label">إجمالي العائد</span>
+            <span class="backtest-stat-val ${isPositive ? 'positive' : 'negative'}">${isPositive ? '+' : ''}${data.total_return_pct}%</span>
+        </div>
+        <div class="backtest-stat">
+            <span class="backtest-stat-label">نسبة الربح</span>
+            <span class="backtest-stat-val">${data.win_rate}%</span>
+        </div>
+        <div class="backtest-stat">
+            <span class="backtest-stat-label">عدد الصفقات</span>
+            <span class="backtest-stat-val">${data.total_trades}</span>
+        </div>
+        <div class="backtest-stat">
+            <span class="backtest-stat-label">Sharpe Ratio</span>
+            <span class="backtest-stat-val">${data.sharpe_ratio}</span>
+        </div>
+        <div class="backtest-stat">
+            <span class="backtest-stat-label">أقصى انخفاض</span>
+            <span class="backtest-stat-val negative">-${data.max_drawdown_pct}%</span>
+        </div>
+        <div class="backtest-stat">
+            <span class="backtest-stat-label">Profit Factor</span>
+            <span class="backtest-stat-val">${data.profit_factor}</span>
+        </div>
+        <div class="backtest-stat">
+            <span class="backtest-stat-label">متوسط الربح</span>
+            <span class="backtest-stat-val positive">+${data.avg_win}%</span>
+        </div>
+        <div class="backtest-stat">
+            <span class="backtest-stat-label">متوسط الخسارة</span>
+            <span class="backtest-stat-val negative">${data.avg_loss}%</span>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+function drawBacktestChart(data) {
+    const canvas = document.getElementById('backtestChart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const c = getChartColors();
+
+    const equityCurve = data.equity_curve || [];
+    if (equityCurve.length < 2) return;
+
+    if (backtestChart) backtestChart.destroy();
+
+    const labels = equityCurve.map((_, i) => i);
+
+    backtestChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'رأس المال',
+                data: equityCurve,
+                borderColor: data.total_return_pct >= 0 ? c.positive : c.negative,
+                backgroundColor: data.total_return_pct >= 0 ? 'rgba(0,230,118,0.08)' : 'rgba(255,23,68,0.08)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(20,29,46,0.95)',
+                    titleColor: c.text,
+                    bodyColor: c.text,
+                    borderColor: c.accent,
+                    borderWidth: 1,
+                }
+            },
+            scales: {
+                x: { display: false },
+                y: {
+                    grid: { color: c.grid },
+                    ticks: { color: c.text, font: { size: 10 } },
+                }
+            }
+        }
+    });
+}
+
+// ======= Risk Management Panel =======
+function openRiskPanel() {
+    openTab('risk-tab');
+}
+
+function switchRiskTab(tab) {
+    document.querySelectorAll('.risk-tab-content').forEach(el => el.classList.add('hidden'));
+    document.getElementById(`risk-${tab}-tab`).classList.remove('hidden');
+
+    document.querySelectorAll('.risk-tab-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+}
+
+async function calculatePositionSize() {
+    const balance = parseFloat(document.getElementById('riskAccountBalance').value);
+    const entry = parseFloat(document.getElementById('riskEntryPrice').value);
+    const stop = parseFloat(document.getElementById('riskStopLossPrice').value);
+    const risk = parseFloat(document.getElementById('riskPerTrade').value) / 100;
+
+    if (!balance || !entry || !stop) {
+        showToast('أدخل جميع القيم');
+        return;
+    }
+
+    try {
+        const res = await fetch('./api/risk/position-size', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_balance: balance, entry_price: entry, stop_loss: stop, risk_per_trade: risk })
+        });
+        const data = await res.json();
+
+        const container = document.getElementById('position-size-result');
+        container.innerHTML = `
+            <div class="risk-item" style="margin-top: 16px;">
+                <span class="risk-label">الكمية المُوصى بها</span>
+                <span class="risk-val" style="color: ${data.recommended ? 'var(--positive)' : 'var(--negative)'};">${data.shares} سهم</span>
+                <span class="risk-sublabel">قيمة المركز: ${formatPrice(data.position_value, 'USD')}</span>
+                <span class="risk-sublabel">المخاطرة: ${data.risk_pct}% من الحساب</span>
+            </div>
+        `;
+    } catch (err) {
+        showToast('خطأ في الحساب');
+    }
+}
+
+async function calculateKelly() {
+    const winRate = parseFloat(document.getElementById('kellyWinRate').value);
+    const avgWin = parseFloat(document.getElementById('kellyAvgWin').value);
+    const avgLoss = parseFloat(document.getElementById('kellyAvgLoss').value);
+
+    try {
+        const res = await fetch('./api/risk/kelly', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ win_rate: winRate, avg_win_pct: avgWin, avg_loss_pct: avgLoss })
+        });
+        const data = await res.json();
+
+        const container = document.getElementById('kelly-result');
+        container.innerHTML = `
+            <div class="risk-item" style="margin-top: 16px;">
+                <span class="risk-label">Kelly الكامل</span>
+                <span class="risk-val">${data.kelly_pct}%</span>
+            </div>
+            <div class="risk-item" style="margin-top: 8px;">
+                <span class="risk-label">نصف Kelly (موصى به)</span>
+                <span class="risk-val" style="color: var(--positive);">${data.half_kelly}%</span>
+            </div>
+            <div class="risk-item" style="margin-top: 8px;">
+                <span class="risk-label">نسبة الربح/الخسارة</span>
+                <span class="risk-val">${data.win_loss_ratio}</span>
+            </div>
+            <p style="margin-top: 12px; font-size: 0.8rem; color: var(--text2);">${data.note}</p>
+        `;
+    } catch (err) {
+        showToast('خطأ في الحساب');
+    }
+}
+
+async function calculateStopLoss() {
+    const entry = parseFloat(document.getElementById('slEntryPrice').value);
+    const atr = parseFloat(document.getElementById('slATR').value);
+    const method = document.getElementById('slMethod').value;
+
+    try {
+        const res = await fetch('./api/risk/stop-loss', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entry_price: entry, atr: atr, method: method })
+        });
+        const data = await res.json();
+
+        const container = document.getElementById('stoploss-result');
+        const rec = data.recommended || {};
+
+        container.innerHTML = `
+            <div class="risk-item" style="margin-top: 16px; border: 2px solid var(--accent);">
+                <span class="risk-label">الموصى به (${rec.method || ''})</span>
+                <span class="risk-val" style="color: var(--accent);">${rec.price || '—'}</span>
+                <span class="risk-sublabel">المسافة: ${rec.distance_pct || '—'}%</span>
+            </div>
+        `;
+    } catch (err) {
+        showToast('خطأ في الحساب');
+    }
+}
+
+function addPortfolioPosition() {
+    const container = document.getElementById('portfolio-positions');
+    const div = document.createElement('div');
+    div.className = 'portfolio-position';
+    div.innerHTML = `
+        <input type="text" placeholder="الرمز" class="pos-symbol">
+        <input type="number" placeholder="الكمية" class="pos-shares">
+        <input type="number" placeholder="السعر الحالي" class="pos-price" step="0.01">
+        <input type="number" placeholder="وقف الخسارة" class="pos-stop" step="0.01">
+    `;
+    container.appendChild(div);
+}
+
+async function analyzePortfolioRisk() {
+    const balance = parseFloat(document.getElementById('portfolioBalance').value);
+    const positions = [];
+
+    document.querySelectorAll('.portfolio-position').forEach(pos => {
+        const symbol = pos.querySelector('.pos-symbol').value;
+        const shares = parseFloat(pos.querySelector('.pos-shares').value);
+        const price = parseFloat(pos.querySelector('.pos-price').value);
+        const stop = parseFloat(pos.querySelector('.pos-stop').value);
+
+        if (symbol && shares && price) {
+            positions.push({ symbol, shares, current_price: price, stop_loss: stop || price * 0.95 });
+        }
+    });
+
+    try {
+        const res = await fetch('./api/risk/portfolio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ positions, account_balance: balance })
+        });
+        const data = await res.json();
+
+        const container = document.getElementById('portfolio-risk-result');
+        container.innerHTML = `
+            <div style="margin-top: 20px;">
+                <div class="risk-item">
+                    <span class="risk-label">مستوى المخاطرة</span>
+                    <span class="risk-val" style="color: ${data.risk_color === 'green' ? 'var(--positive)' : data.risk_color === 'red' ? 'var(--negative)' : 'var(--warning)'};">${data.risk_level}</span>
+                </div>
+                <div class="risk-item" style="margin-top: 8px;">
+                    <span class="risk-label">إجمالي المخاطرة</span>
+                    <span class="risk-val">${data.total_risk_pct}%</span>
+                </div>
+                <div class="risk-item" style="margin-top: 8px;">
+                    <span class="risk-label">استخدام رأس المال</span>
+                    <span class="risk-val">${data.portfolio_utilization_pct}%</span>
+                </div>
+                <div style="margin-top: 12px;">
+                    ${data.recommendations.map(r => `<p style="font-size: 0.8rem; color: var(--text2); margin: 4px 0;">${r}</p>`).join('')}
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        showToast('خطأ في التحليل');
+    }
+}
+
+// ======= Smart Alerts =======
+async function createSmartAlerts() {
+    if (!currentSymbol) {
+        showToast('ابحث عن سهم أولاً');
+        return;
+    }
+
+    try {
+        const res = await fetch('./api/alerts/smart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol: currentSymbol, market: currentData?.market || 'us' })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+            showToast(data.error);
+            return;
+        }
+
+        showToast(`تم إنشاء ${data.count} تنبيهات ذكية`);
+        renderAlertsBadge();
+        renderAlertsPanel();
+    } catch (err) {
+        showToast('خطأ في إنشاء التنبيهات');
+    }
+}
+
+function showAddAlertForm() {
+    if (!currentSymbol) {
+        showToast('ابحث عن سهم أولاً');
+        return;
+    }
+    openAlertModal();
+}
+
+// ======= Market Sentiment =======
+async function loadMarketSentiment() {
+    try {
+        const res = await fetch('./api/news/market-sentiment');
+        const data = await res.json();
+
+        const bar = document.getElementById('marketSentimentBar');
+        const valEl = document.getElementById('sentimentValue');
+        const moodEl = document.getElementById('sentimentMood');
+        const vixEl = document.getElementById('vixValue');
+
+        if (bar && data.fear_greed_index) {
+            bar.classList.remove('hidden');
+            if (valEl) valEl.textContent = data.fear_greed_index;
+            if (moodEl) {
+                moodEl.textContent = data.mood || '—';
+                moodEl.style.background = data.mood_color === 'green' ? 'rgba(0,230,118,0.2)' :
+                                           data.mood_color === 'red' ? 'rgba(255,23,68,0.2)' :
+                                           'rgba(255,171,64,0.2)';
+                moodEl.style.color = data.mood_color === 'green' ? '#00e676' :
+                                    data.mood_color === 'red' ? '#ff1744' : '#ffab40';
+            }
+            if (vixEl) vixEl.textContent = data.vix_estimate || '—';
+        }
+    } catch (err) {
+        console.error('Market sentiment error:', err);
+    }
+}
+
+// ======= Override displayResult to include Phase 2 features =======
+const originalDisplayResult = displayResult;
+displayResult = function(data) {
+    // Call original function
+    originalDisplayResult(data);
+
+    // Phase 2 additions
+    if (data.news) {
+        loadNews(data.symbol);
+    }
+
+    if (data.multi_timeframe) {
+        loadMultiTimeframe(data.symbol);
+    }
+
+    if (data.risk_analysis) {
+        const positionSize = data.risk_analysis.position_size || {};
+        displayRiskAnalysis(data.risk_analysis.risk_reward, positionSize);
+    }
+
+    // Update risk card with current data
+    const targets = data.analysis?.targets || {};
+    const stopEl = document.getElementById('risk-stop');
+    const targetEl = document.getElementById('risk-target');
+    const stopDetailEl = document.getElementById('risk-stop-detail');
+    const targetDetailEl = document.getElementById('risk-target-detail');
+
+    if (stopEl) stopEl.textContent = formatPrice(targets.stop_loss, data.currency);
+    if (targetEl) targetEl.textContent = formatPrice(targets.target_1, data.currency);
+    if (stopDetailEl) stopDetailEl.textContent = `المسافة: ${((data.current - targets.stop_loss) / data.current * 100).toFixed(1)}%`;
+    if (targetDetailEl) targetDetailEl.textContent = `المكافأة: ${((targets.target_1 - data.current) / data.current * 100).toFixed(1)}%`;
+};
+
+// ======= Init Phase 2 =======
+document.addEventListener('DOMContentLoaded', () => {
+    loadMarketSentiment();
+    loadAlertStats();
+});
+
+async function loadAlertStats() {
+    try {
+        const res = await fetch('./api/alerts/stats');
+        const data = await res.json();
+        if (data.total_alerts !== undefined) {
+            document.getElementById('alertsBadge').textContent = data.active_alerts || 0;
+        }
+    } catch (e) {}
+}
