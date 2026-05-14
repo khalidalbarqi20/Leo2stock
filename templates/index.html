@@ -407,83 +407,209 @@
                         <div class="news-badge neutral">محايد</div>
                         <div class="news-content">
                             <h3>موبيكس لابز توقع خطاب نوايا غير ملزم للاستحواذ على مشروع تسليم خاص؛ الشروط غير معلنة</h3>
-                            <p>الاستحواذ المقترح سيضع موبيكس لابز داخل سلاسل التوريد الاستراتيجية الأمريكية التي تدعم الدفاع والأمن القومي والبنية التحتية للذكاء الاصطناعي</p>
-                            <div class="news-meta">
-                                <span class="news-source">Benzinga</span>
-                                <span class="news-date">١٤/٠٥/٢٠٢٦</span>
-                                <span class="news-reliability">ثقة: ٥٠%</span>
-                            </div>
-                        </div>
-                    </div>
+    <!-- ===== الأخبار والمشاعر ===== -->
+    <section id="news-sentiment" class="section">
+        <div class="section-header">
+            <h2><i class="fas fa-newspaper"></i> الأخبار والمشاعر</h2>
+            <div class="section-actions">
+                <button class="btn-icon" id="refresh-news" title="تحديث">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
 
-                    <div class="news-card">
-                        <div class="news-badge neutral">محايد</div>
-                        <div class="news-content">
-                            <h3>موبيكس لابز تعلن عن طلب إضافي لتكنولوجيا طائرات بوينج ٧٣٧NG</h3>
-                            <p>موبيكس لابز، إنكوربوريتد: موبيكس لابز، إنكوربوريتد - تعلن عن طلب إضافي لتكنولوجيا طائرات بوينج ٧٣٧NG</p>
-                            <div class="news-meta">
-                                <span class="news-source">Finnhub</span>
-                                <span class="news-date">١٤/٠٥/٢٠٢٦</span>
-                                <span class="news-reliability">ثقة: ٥٠%</span>
-                            </div>
-                        </div>
-                    </div>
+        <div class="news-container">
+            <div class="news-filters">
+                <button class="news-filter active" data-filter="all">الكل</button>
+                <button class="news-filter" data-filter="earnings">أرباح</button>
+                <button class="news-filter" data-filter="mergers">اندماج</button>
+                <button class="news-filter" data-filter="economy">اقتصاد</button>
+                <button class="news-filter" data-filter="crypto">عملات رقمية</button>
+            </div>
 
-                    <div class="news-card">
-                        <div class="news-badge neutral">محايد</div>
-                        <div class="news-content">
-                            <h3>ما الذي يحدث لسهم موبيكس لابز يوم الثلاثاء</h3>
-                            <p>موبيكس لابز تحصل على طلب جوي متكرر لأنظمة بوينج ٧٣٧NG، مما يعزز موقعها في سوق الطيران عالي الموثوقية</p>
-                            <div class="news-meta">
-                                <span class="news-source">Benzinga</span>
-                                <span class="news-date">١٢/٠٥/٢٠٢٦</span>
-                                <span class="news-reliability">ثقة: ٥٠%</span>
-                            </div>
+            <div id="news-feed" class="news-feed">
+                <!-- خبر 1 -->
+                <div class="news-card featured">
+                    <div class="news-badge hot">إيجابي قوي</div>
+                    <div class="news-content">
+                        <h3>هذه الأسهم تتحرك بقوة في جلسة اليوم</h3>
+                        <p>تعرف على أكبر الرابحين والخاسرين في أسواق الولايات المتحدة قبل إغلاق الجلسة. تحليل شامل لحركة السوق.</p>
+                        <div class="news-meta">
+                            <span class="news-source">ChartMill</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ١٠٠%</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- تحليل المشاعر -->
-                <div class="sentiment-panel">
-                    <h3><i class="fas fa-heart-pulse"></i> تحليل المشاعر العام</h3>
-                    <div class="sentiment-gauge-container">
-                        <canvas id="sentiment-gauge"></canvas>
-                        <div class="sentiment-labels">
-                            <span class="negative">سلبي</span>
-                            <span class="neutral">محايد</span>
-                            <span class="positive">إيجابي</span>
-                        </div>
-                        <div class="sentiment-score">
-                            <span class="score-value">+٦٥%</span>
-                            <span class="score-label">إيجابي قوي</span>
+                <!-- خبر 2 -->
+                <div class="news-card">
+                    <div class="news-badge neutral">محايد</div>
+                    <div class="news-content">
+                        <h3>الأسهم الأكثر نشاطاً في جلسة الخميس</h3>
+                        <p>اكتشف الأسهم الأكثر تداولاً من حيث الحجم والنشاط في السوق الأمريكي.</p>
+                        <div class="news-meta">
+                            <span class="news-source">ChartMill</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ٥٠%</span>
                         </div>
                     </div>
-                    <div class="sentiment-breakdown">
-                        <div class="breakdown-item">
-                            <span class="breakdown-label">إيجابي</span>
-                            <div class="breakdown-bar">
-                                <div class="breakdown-fill positive" style="width: 65%"></div>
-                            </div>
-                            <span class="breakdown-value">٦٥%</span>
+                </div>
+
+                <!-- خبر 3 -->
+                <div class="news-card">
+                    <div class="news-badge neutral">محايد</div>
+                    <div class="news-content">
+                        <h3>ما الذي يحدث في السوق الآن؟</h3>
+                        <p>تحليل شامل لأداء الأسواق الأمريكية في منتصف جلسة التداول.</p>
+                        <div class="news-meta">
+                            <span class="news-source">ChartMill</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ٥٠%</span>
                         </div>
-                        <div class="breakdown-item">
-                            <span class="breakdown-label">محايد</span>
-                            <div class="breakdown-bar">
-                                <div class="breakdown-fill neutral" style="width: 25%"></div>
-                            </div>
-                            <span class="breakdown-value">٢٥%</span>
+                    </div>
+                </div>
+
+                <!-- خبر 4 -->
+                <div class="news-card">
+                    <div class="news-badge neutral">محايد</div>
+                    <div class="news-content">
+                        <h3>أي الأسهم تتداول بفجوة سعرية؟</h3>
+                        <p>نظرة على الأسهم التي فتحت بفجوة صاعدة أو هابطة في بداية الجلسة.</p>
+                        <div class="news-meta">
+                            <span class="news-source">ChartMill</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ٥٠%</span>
                         </div>
-                        <div class="breakdown-item">
-                            <span class="breakdown-label">سلبي</span>
-                            <div class="breakdown-bar">
-                                <div class="breakdown-fill negative" style="width: 10%"></div>
-                            </div>
-                            <span class="breakdown-value">١٠%</span>
+                    </div>
+                </div>
+
+                <!-- خبر 5 -->
+                <div class="news-card">
+                    <div class="news-badge neutral">محايد</div>
+                    <div class="news-content">
+                        <h3>أسهم التكنولوجيا تتحرك في الجلسة اللحظية</h3>
+                        <div class="news-meta">
+                            <span class="news-source">Benzinga</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ٥٠%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- خبر 6 -->
+                <div class="news-card featured">
+                    <div class="news-badge hot">إيجابي قوي</div>
+                    <div class="news-content">
+                        <h3>داو جونز يقفز ٢٥٠ نقطة ومبيعات التجزئة ترتفع</h3>
+                        <p>الأسهم الأمريكية ترتفع بقيادة قطاع التكنولوجيا. مبيعات التجزئة تزداد ٠.٥٪ في أبريل. الذهب يصعد والنفط يتراجع.</p>
+                        <div class="news-meta">
+                            <span class="news-source">Benzinga</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ١٠٠%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- خبر 7 -->
+                <div class="news-card">
+                    <div class="news-badge neutral">محايد</div>
+                    <div class="news-content">
+                        <h3>موبيكس لابز تستحوذ على شركة معادن نادرة أمريكية</h3>
+                        <p>صفقة جديدة تعزز حضور الشركة في سلاسل التوريد الاستراتيجية للدفاع والأمن القومي.</p>
+                        <div class="news-meta">
+                            <span class="news-source">Finnhub</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ٥٠%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- خبر 8 -->
+                <div class="news-card">
+                    <div class="news-badge neutral">محايد</div>
+                    <div class="news-content">
+                        <h3>موبيكس لابز توقع اتفاقية استحواذ غير ملزمة</h3>
+                        <p>الصفقة ستضع الشركة في موقع استراتيجي لدعم البنية التحتية للذكاء الاصطناعي والدفاع.</p>
+                        <div class="news-meta">
+                            <span class="news-source">Benzinga</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ٥٠%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- خبر 9 -->
+                <div class="news-card">
+                    <div class="news-badge neutral">محايد</div>
+                    <div class="news-content">
+                        <h3>موبيكس لابز تحصل على طلب جديد لطائرات بوينج ٧٣٧</h3>
+                        <p>طلب إضافي لتكنولوجيا الشركة في طائرات بوينج ٧٣٧NG يعزز مكانتها في سوق الطيران.</p>
+                        <div class="news-meta">
+                            <span class="news-source">Finnhub</span>
+                            <span class="news-date">١٤/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ٥٠%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- خبر 10 -->
+                <div class="news-card">
+                    <div class="news-badge neutral">محايد</div>
+                    <div class="news-content">
+                        <h3>ما الجديد في سهم موبيكس لابز؟</h3>
+                        <p>الشركة تحصل على طلب جوي متكرر لأنظمة بوينج ٧٣٧NG مما يعزز موثوقيتها في سوق الطيران.</p>
+                        <div class="news-meta">
+                            <span class="news-source">Benzinga</span>
+                            <span class="news-date">١٢/٠٥/٢٠٢٦</span>
+                            <span class="news-reliability">ثقة: ٥٠%</span>
                         </div>
                     </div>
                 </div>
             </div>
-        </section>
+
+            <!-- تحليل المشاعر -->
+            <div class="sentiment-panel">
+                <h3><i class="fas fa-heart-pulse"></i> تحليل المشاعر العام</h3>
+                <div class="sentiment-gauge-container">
+                    <canvas id="sentiment-gauge"></canvas>
+                    <div class="sentiment-labels">
+                        <span class="negative">سلبي</span>
+                        <span class="neutral">محايد</span>
+                        <span class="positive">إيجابي</span>
+                    </div>
+                    <div class="sentiment-score">
+                        <span class="score-value">+٦٥%</span>
+                        <span class="score-label">إيجابي قوي</span>
+                    </div>
+                </div>
+                <div class="sentiment-breakdown">
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">إيجابي</span>
+                        <div class="breakdown-bar">
+                            <div class="breakdown-fill positive" style="width: 65%"></div>
+                        </div>
+                        <span class="breakdown-value">٦٥%</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">محايد</span>
+                        <div class="breakdown-bar">
+                            <div class="breakdown-fill neutral" style="width: 25%"></div>
+                        </div>
+                        <span class="breakdown-value">٢٥%</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="breakdown-label">سلبي</span>
+                        <div class="breakdown-bar">
+                            <div class="breakdown-fill negative" style="width: 10%"></div>
+                        </div>
+                        <span class="breakdown-value">١٠%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
 
         <!-- ===== الجزء الرابع: تحليل متعدد الأطر الزمنية ===== -->
         <section id="multi-timeframe" class="section">
