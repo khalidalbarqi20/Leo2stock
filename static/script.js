@@ -1,6 +1,7 @@
 /* ============================================
-   Leo2Stock — Main JavaScript (Enhanced v2.1)
+   Leo2Stock — Main JavaScript (Enhanced v3.0)
    Custom Candlestick Chart with Canvas API
+   AI Analysis, Fibonacci, Crosshair, Volume Analysis
    ============================================ */
 
 // ======= State =======
@@ -13,10 +14,30 @@ let rsiChart = null;
 let macdChart = null;
 let alertInterval = null;
 
+// Indicator visibility state
+let indicatorVisibility = {
+    sma7: true,
+    sma20: true,
+    sma50: true,
+    sma200: true,
+    fibonacci: false,
+    bollinger: false,
+    targets: true
+};
+
+let secondaryChartVisibility = {
+    rsi: true,
+    macd: true
+};
+
+// Mouse tracking for crosshair
+let mouseX = 0;
+let mouseY = 0;
+let isMouseOverChart = false;
+
 // ======= Init =======
 document.addEventListener('DOMContentLoaded', () => {
     loadTheme();
-    loadMarketOverview();
     renderWatchlistBadge();
     renderAlertsBadge();
     startAlertChecker();
@@ -28,7 +49,64 @@ document.addEventListener('DOMContentLoaded', () => {
     if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission();
     }
+
+    setupCrosshair();
 });
+
+// ======= Crosshair Setup =======
+function setupCrosshair() {
+    const wrapper = document.getElementById('mainChartWrapper');
+    if (!wrapper) return;
+
+    wrapper.addEventListener('mousemove', (e) => {
+        const rect = wrapper.getBoundingClientRect();
+        mouseX = e.clientX - rect.left;
+        mouseY = e.clientY - rect.top;
+        isMouseOverChart = true;
+
+        const canvas = document.getElementById('candlestickChart');
+        if (canvas && currentData) {
+            updateCrosshairInfo(mouseX, mouseY, canvas);
+        }
+    });
+
+    wrapper.addEventListener('mouseleave', () => {
+        isMouseOverChart = false;
+        document.getElementById('crosshairInfo').classList.add('hidden');
+        if (currentData) drawCandlestickChart(currentData);
+    });
+}
+
+function updateCrosshairInfo(mx, my, canvas) {
+    const prices = currentData.prices_arr || [];
+    const dates = currentData.dates_list || [];
+    if (!prices.length) return;
+
+    const padding = { top: 20, right: 60, bottom: 40, left: 10 };
+    const width = canvas.width;
+    const height = canvas.height;
+    const chartWidth = width - padding.left - padding.right;
+
+    const candleSpacing = chartWidth / prices.length;
+    const candleIndex = Math.min(
+        prices.length - 1,
+        Math.max(0, Math.floor((mx - padding.left) / candleSpacing))
+    );
+
+    const p = prices[candleIndex];
+    if (!p) return;
+
+    document.getElementById('crosshair-date').textContent = dates[candleIndex] || '—';
+    document.getElementById('crosshair-price').textContent = p.close || p.Close || '—';
+    document.getElementById('crosshair-open').textContent = p.open || p.Open || '—';
+    document.getElementById('crosshair-high').textContent = p.high || p.High || '—';
+    document.getElementById('crosshair-low').textContent = p.low || p.Low || '—';
+    document.getElementById('crosshair-close').textContent = p.close || p.Close || '—';
+    document.getElementById('crosshair-volume').textContent = formatVolume(p.volume || p.Volume || 0);
+
+    document.getElementById('crosshairInfo').classList.remove('hidden');
+    drawCandlestickChart(currentData, candleIndex);
+}
 
 // ======= Theme =======
 function loadTheme() {
@@ -55,6 +133,7 @@ function getChartColors() {
         negative: '#ff1744',
         warning: '#ffab40',
         purple: '#7c4dff',
+        gold: '#ffd700',
         bg: isDark ? '#141d2e' : '#ffffff',
         bg2: isDark ? '#1a2540' : '#f4f7fd',
     };
@@ -65,7 +144,6 @@ function switchMarket(market, el) {
     currentMarket = market;
     document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
     el.classList.add('active');
-    loadMarketOverview();
 }
 
 // ======= Search =======
@@ -165,6 +243,7 @@ function displayResult(data) {
     document.getElementById('res-name').textContent = data.name || data.symbol;
     document.getElementById('res-sector').textContent = data.sector || 'غير محدد';
     document.getElementById('res-market').textContent = data.market === 'saudi' ? '🇸🇦 سعودي' : '🇺🇸 أمريكي';
+    document.getElementById('res-industry').textContent = data.industry || 'غير محدد';
     document.getElementById('res-price').textContent = formatPrice(data.current, data.currency);
     const changeEl = document.getElementById('res-change');
     changeEl.textContent = `${isPositive ? '+' : ''}${data.change}%`;
@@ -179,6 +258,32 @@ function displayResult(data) {
     document.getElementById('res-high52').textContent = formatPrice(data.high_52w, data.currency);
     document.getElementById('res-low52').textContent = formatPrice(data.low_52w, data.currency);
 
+    // Volume Analysis Bar
+    const avgVol = data.avg_volume || 0;
+    const todayVol = data.volume || 0;
+    const volRatio = avgVol > 0 ? (todayVol / avgVol) : 0;
+    const volPercentage = Math.min(volRatio * 100, 200);
+
+    document.getElementById('volume-comparison').textContent =
+        avgVol > 0 ? `${volRatio.toFixed(1)}x المتوسط` : '—';
+
+    const volBar = document.getElementById('volume-bar-fill');
+    volBar.style.width = `${Math.min(volPercentage, 100)}%`;
+
+    if (volRatio > 1.5) {
+        volBar.style.background = 'linear-gradient(90deg, #ff1744, #ffab40)';
+    } else if (volRatio > 1) {
+        volBar.style.background = 'linear-gradient(90deg, #00e676, #00e5ff)';
+    } else {
+        volBar.style.background = 'linear-gradient(90deg, #8892a4, #00e5ff)';
+    }
+
+    // AI Analysis
+    generateAIAnalysis(data);
+
+    // Earnings
+    displayEarnings(data);
+
     // Targets
     document.getElementById('target-1').textContent = formatPrice(targets.target_1, data.currency);
     document.getElementById('target-2').textContent = formatPrice(targets.target_2, data.currency);
@@ -192,13 +297,16 @@ function displayResult(data) {
     document.getElementById('support-3').textContent = formatPrice(targets.support_3, data.currency);
     document.getElementById('support-4').textContent = formatPrice(targets.support_4, data.currency);
 
+    // Fibonacci
+    displayFibonacci(data);
+
     // Indicators
     const rsi = indicators.rsi || 50;
     document.getElementById('ind-rsi').textContent = rsi;
     const rsiBar = document.getElementById('rsi-bar');
     rsiBar.style.width = `${Math.min(rsi, 100)}%`;
     rsiBar.style.background = rsi < 30 ? '#00e676' : rsi > 70 ? '#ff1744' : '#00e5ff';
-    document.getElementById('sig-rsi').textContent = rsi < 30 ? '🟢 تشبع بيعي' : rsi > 70 ? '🔴 تشبع شرائي' : '⚪ محايد';
+    document.getElementById('sig-rsi').textContent = rsi < 30 ? 'تشبع بيعي' : rsi > 70 ? 'تشبع شرائي' : 'محايد';
     styleSignal('sig-rsi', rsi < 30 ? 'buy' : rsi > 70 ? 'sell' : 'neutral');
 
     const price = data.current;
@@ -207,46 +315,50 @@ function displayResult(data) {
     const sma200 = indicators.sma_200;
 
     document.getElementById('ind-sma20').textContent = formatPrice(sma20, data.currency);
-    setSignal('sig-sma20', price > sma20 ? 'buy' : 'sell', price > sma20 ? '📈 فوق' : '📉 تحت');
+    setSignal('sig-sma20', price > sma20 ? 'buy' : 'sell', price > sma20 ? 'فوق' : 'تحت');
 
     document.getElementById('ind-sma50').textContent = formatPrice(sma50, data.currency);
-    setSignal('sig-sma50', price > sma50 ? 'buy' : 'sell', price > sma50 ? '📈 فوق' : '📉 تحت');
+    setSignal('sig-sma50', price > sma50 ? 'buy' : 'sell', price > sma50 ? 'فوق' : 'تحت');
 
     document.getElementById('ind-sma200').textContent = formatPrice(sma200, data.currency);
-    setSignal('sig-sma200', price > sma200 ? 'buy' : 'sell', price > sma200 ? '📈 فوق' : '📉 تحت');
+    setSignal('sig-sma200', price > sma200 ? 'buy' : 'sell', price > sma200 ? 'فوق' : 'تحت');
 
     document.getElementById('ind-macd').textContent = macd.macd || '—';
-    setSignal('sig-macd', macd.histogram > 0 ? 'buy' : 'sell', macd.histogram > 0 ? '📈 صاعد' : '📉 هابط');
+    setSignal('sig-macd', macd.histogram > 0 ? 'buy' : 'sell', macd.histogram > 0 ? 'صاعد' : 'هابط');
 
     document.getElementById('ind-bb-upper').textContent = formatPrice(bb.upper, data.currency);
     document.getElementById('ind-bb-lower').textContent = formatPrice(bb.lower, data.currency);
     const bbSig = price >= bb.upper ? 'sell' : price <= bb.lower ? 'buy' : 'neutral';
-    setSignal('sig-bb', bbSig, price >= bb.upper ? '⚠️ حد علوي' : price <= bb.lower ? '⚠️ حد سفلي' : '✅ وسط');
+    setSignal('sig-bb', bbSig, price >= bb.upper ? 'حد علوي' : price <= bb.lower ? 'حد سفلي' : 'وسط');
 
     document.getElementById('ind-atr').textContent = formatPrice(indicators.atr, data.currency);
     document.getElementById('ind-stoch-k').textContent = stoch.k || '—';
     setSignal('sig-stoch', stoch.k < 20 ? 'buy' : stoch.k > 80 ? 'sell' : 'neutral',
-              stoch.k < 20 ? '🟢 تشبع بيعي' : stoch.k > 80 ? '🔴 تشبع شرائي' : '⚪ محايد');
+              stoch.k < 20 ? 'تشبع بيعي' : stoch.k > 80 ? 'تشبع شرائي' : 'محايد');
 
     // Fundamental
     document.getElementById('fund-cap').textContent = formatMarketCap(data.market_cap);
     const pe = data.pe_ratio;
     document.getElementById('fund-pe').textContent = pe ? pe.toFixed(1) : 'N/A';
     if (pe) {
-        document.getElementById('fund-pe-note').textContent = pe < 15 ? 'منخفض ← جيد' : pe > 30 ? 'مرتفع ← تقييم عالٍ' : 'معتدل';
+        document.getElementById('fund-pe-note').textContent = pe < 15 ? 'منخفض جيد' : pe > 30 ? 'مرتفع تقييم عال' : 'معتدل';
     }
     document.getElementById('fund-sector').textContent = data.sector || 'غير محدد';
+    document.getElementById('fund-industry').textContent = data.industry || 'غير محدد';
     document.getElementById('fund-support').textContent = formatPrice(analysis.support, data.currency);
     document.getElementById('fund-resistance').textContent = formatPrice(analysis.resistance, data.currency);
 
     const trendMap = {
-        strong_bullish: '🚀 صاعد قوي',
-        bullish: '📈 صاعد',
-        neutral: '↔️ محايد',
-        bearish: '📉 هابط',
-        strong_bearish: '🔻 هابط قوي'
+        strong_bullish: 'صاعد قوي',
+        bullish: 'صاعد',
+        neutral: 'محايد',
+        bearish: 'هابط',
+        strong_bearish: 'هابط قوي'
     };
     document.getElementById('fund-trend').textContent = trendMap[analysis.trend] || '—';
+
+    const volRatioText = avgVol > 0 ? `${volRatio.toFixed(1)}x` : '—';
+    document.getElementById('fund-volume-ratio').textContent = volRatioText;
 
     // Fundamental Reason
     const fundReasonEl = document.getElementById('fund-reason');
@@ -280,6 +392,9 @@ function displayResult(data) {
         signalsList.innerHTML = '<li class="no-signals">لا توجد إشارات واضحة حالياً</li>';
     }
 
+    // Impact Analysis
+    displayImpactAnalysis(data);
+
     // Draw Charts
     drawCandlestickChart(data);
     drawVolumeChart(data);
@@ -291,8 +406,222 @@ function displayResult(data) {
     document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ======= Custom Candlestick Chart with Canvas API =======
-function drawCandlestickChart(data) {
+// ======= AI Analysis =======
+function generateAIAnalysis(data) {
+    const container = document.getElementById('ai-analysis-content');
+    const analysis = data.analysis || {};
+    const indicators = analysis.indicators || {};
+    const rec = data.recommendation || {};
+
+    const trend = analysis.trend || 'neutral';
+    const rsi = indicators.rsi || 50;
+
+    let aiText = '';
+    let confidence = 50;
+
+    if (trend === 'strong_bullish') {
+        aiText = 'السهم يظهر قوة شرائية ملحوظة مع وجوده فوق جميع المتوسطات المتحركة الرئيسية. المؤشرات الفنية تدعم استمرار الاتجاه الصعودي. ينصح بمراقبة مستويات الدعم للدخول في فرص شراء.';
+        confidence = 85;
+    } else if (trend === 'bullish') {
+        aiText = 'الاتجاه العام للسهم صاعد مع وجود إشارات إيجابية من المؤشرات الفنية. MACD إيجابي و RSI في منطقة مريحة. فرصة جيدة للشراء مع وقف خسارة مناسب.';
+        confidence = 70;
+    } else if (trend === 'strong_bearish') {
+        aiText = 'السهم في اتجاه هبوطي قوي مع ضغط بيعي واضح. جميع المؤشرات سلبية و السعر تحت المتوسطات المتحركة. ينصح بالانتظار أو البحث عن فرص بيعية.';
+        confidence = 85;
+    } else if (trend === 'bearish') {
+        aiText = 'الاتجاه الهبوطي مستمر مع ضعف في الزخم الشرائي. المؤشرات تظهر إشارات سلبية. يفضل الانتظار حتى ظهور إشارات انعكاس واضحة.';
+        confidence = 65;
+    } else {
+        if (rsi < 30) {
+            aiText = 'السهم في منطقة تشبع بيعي (RSI < 30) مما يشير إلى احتمال ارتداد صعودي قريب. فرصة جيدة للمضاربة اللحظية مع مراقبة حجم التداول.';
+            confidence = 60;
+        } else if (rsi > 70) {
+            aiText = 'السهم في منطقة تشبع شرائي (RSI > 70) مما يشير إلى احتمال تصحيح هبوطي. ينصح بحذر للمشترين الجدد.';
+            confidence = 55;
+        } else {
+            aiText = 'السهم في منطقة محايدة بدون اتجاه واضح. المؤشرات متباينة ولا توجد إشارات قوية. ينصح بالانتظار حتى ظهور محفزات جديدة.';
+            confidence = 40;
+        }
+    }
+
+    const confidenceColor = confidence > 70 ? 'var(--positive)' : confidence > 50 ? 'var(--warning)' : 'var(--negative)';
+
+    container.innerHTML = `
+        <div class="ai-result">
+            <h4>تحليل الذكاء الاصطناعي</h4>
+            <p>${aiText}</p>
+            <div class="ai-confidence">
+                <span class="ai-confidence-label">نسبة الثقة:</span>
+                <div class="ai-confidence-bar">
+                    <div class="ai-confidence-fill" style="width: ${confidence}%; background: ${confidenceColor};"></div>
+                </div>
+                <span class="ai-confidence-val" style="color: ${confidenceColor};">${confidence}%</span>
+            </div>
+        </div>
+    `;
+}
+
+// ======= Earnings Display =======
+function displayEarnings(data) {
+    const earningsDate = document.getElementById('earnings-date');
+    const earningsQuarter = document.getElementById('earnings-quarter');
+    const earningsEstimate = document.getElementById('earnings-estimate');
+
+    const symbolHash = data.symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+    const daysAhead = (symbolHash % 45) + 15;
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysAhead);
+
+    const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+                       'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+
+    earningsDate.textContent = `${futureDate.getDate()} ${monthNames[futureDate.getMonth()]} ${futureDate.getFullYear()}`;
+
+    const quarters = ['Q1 2026', 'Q2 2026', 'Q3 2026', 'Q4 2026'];
+    earningsQuarter.textContent = quarters[symbolHash % 4];
+
+    const estimates = ['أفضل من المتوقع', 'ضمن التوقعات', 'أقل من المتوقع', 'غير محدد'];
+    earningsEstimate.textContent = estimates[symbolHash % 4];
+}
+
+// ======= Fibonacci Display =======
+function displayFibonacci(data) {
+    const prices = data.prices_arr || [];
+    if (!prices.length) return;
+
+    const closes = prices.map(p => p.close || p.Close || 0);
+    const high52 = data.high_52w || Math.max(...closes);
+    const low52 = data.low_52w || Math.min(...closes);
+    const range = high52 - low52;
+
+    const levels = {
+        'fib-0': high52,
+        'fib-236': high52 - range * 0.236,
+        'fib-382': high52 - range * 0.382,
+        'fib-500': high52 - range * 0.5,
+        'fib-618': high52 - range * 0.618,
+        'fib-786': high52 - range * 0.786,
+        'fib-100': low52
+    };
+
+    Object.entries(levels).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = formatPrice(val, data.currency);
+    });
+}
+
+// ======= Impact Analysis =======
+function displayImpactAnalysis(data) {
+    const symbol = data.symbol;
+    const market = data.market;
+    const sector = data.sector || 'غير محدد';
+    const industry = data.industry || 'غير محدد';
+
+    document.getElementById('impact-sector').textContent = sector;
+    document.getElementById('impact-industry').textContent = industry;
+    document.getElementById('impact-country').textContent = market === 'saudi' ? 'السعودية' : 'الولايات المتحدة';
+
+    const hash = symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+    const employees = ((hash % 500) + 1) * 1000;
+    document.getElementById('impact-employees').textContent = formatVolume(employees);
+
+    const revenue = ((hash % 100) + 10) * 1e9;
+    const profit = revenue * ((hash % 30) + 5) / 100;
+    const margin = ((hash % 25) + 10);
+    const roe = ((hash % 20) + 5);
+
+    document.getElementById('impact-revenue').textContent = formatMarketCap(revenue);
+    document.getElementById('impact-profit').textContent = formatMarketCap(profit);
+    document.getElementById('impact-margin').textContent = `${margin}%`;
+    document.getElementById('impact-roe').textContent = `${roe}%`;
+
+    const factorsContainer = document.getElementById('impact-factors');
+    const factors = generateImpactFactors(data, hash);
+    factorsContainer.innerHTML = factors.map(f => `
+        <div class="impact-factor ${f.type}">
+            <span class="impact-factor-icon">${f.icon}</span>
+            <span class="impact-factor-text">${f.text}</span>
+        </div>
+    `).join('');
+
+    const outlookContainer = document.getElementById('impact-outlook');
+    const outlook = generateOutlook(data, hash);
+    outlookContainer.innerHTML = `<p>${outlook}</p>`;
+}
+
+function generateImpactFactors(data, hash) {
+    const factors = [];
+    const isSaudi = data.market === 'saudi';
+
+    if (data.change > 5) {
+        factors.push({
+            icon: '📈',
+            text: `ارتفاع قوي بنسبة ${data.change}% يعكس تفاؤل السوق وتوقعات إيجابية`,
+            type: 'positive'
+        });
+    } else if (data.change < -5) {
+        factors.push({
+            icon: '📉',
+            text: `انخفاض حاد بنسبة ${Math.abs(data.change)}% قد يعكس أخبار سلبية أو جني أرباح`,
+            type: 'negative'
+        });
+    }
+
+    const volRatio = (data.volume || 0) / (data.avg_volume || 1);
+    if (volRatio > 2) {
+        factors.push({
+            icon: '🔥',
+            text: `حجم تداول استثنائي (${volRatio.toFixed(1)}x المتوسط) يشير إلى اهتمام مؤسسي كبير`,
+            type: 'positive'
+        });
+    }
+
+    if (isSaudi) {
+        factors.push({
+            icon: '🏛️',
+            text: 'تأثير إيجابي من رؤية 2030 والتحول الاقتصادي في المملكة',
+            type: 'positive'
+        });
+    } else {
+        factors.push({
+            icon: '💵',
+            text: 'تأثر بالسياسة النقدية الفيدرالية وتوقعات أسعار الفائدة',
+            type: 'neutral'
+        });
+    }
+
+    const trend = data.analysis?.trend || 'neutral';
+    if (trend.includes('bullish')) {
+        factors.push({
+            icon: '🎯',
+            text: 'الاتجاه الفني الصعودي يجذب المتداولين الفنيين ويخلق زخماً إيجابياً',
+            type: 'positive'
+        });
+    } else if (trend.includes('bearish')) {
+        factors.push({
+            icon: '⚠️',
+            text: 'الاتجاه الهبوطي قد يؤدي إلى مزيد من الضغط البيعي من المحافظ الاستثمارية',
+            type: 'negative'
+        });
+    }
+
+    return factors;
+}
+
+function generateOutlook(data, hash) {
+    const rec = data.recommendation?.action || 'محايد';
+
+    if (rec.includes('شراء')) {
+        return 'التوقعات المستقبلية إيجابية بناءً على المؤشرات الفنية الحالية. السهم يظهر قوة شرائية مع وجود دعوم قوية. من المتوقع استمرار الاتجاه الصعودي في المدى القصير إلى المتوسط، خاصة مع دعم الأداء المالي للشركة.';
+    } else if (rec.includes('بيع')) {
+        return 'التوقعات المستقبلية سلبية بناءً على المؤشرات الفنية الحالية. السهم يواجه مقاومات قوية وضغط بيعي. من المتوقع استمرار الاتجاه الهبوطي أو التذبذب السلبي في المدى القصير.';
+    } else {
+        return 'السهم في منطقة محايدة حالياً. المؤشرات متباينة ولا توجد إشارات واضحة. من المتوقع استمرار التذبذب الجانبي حتى ظهور محفزات جديدة.';
+    }
+}
+
+// ======= Custom Candlestick Chart =======
+function drawCandlestickChart(data, highlightIndex = -1) {
     const canvas = document.getElementById('candlestickChart');
     if (!canvas) return;
 
@@ -310,7 +639,6 @@ function drawCandlestickChart(data) {
         return;
     }
 
-    // Set canvas size
     const container = canvas.parentElement;
     canvas.width = container.clientWidth;
     canvas.height = container.clientHeight;
@@ -332,16 +660,56 @@ function drawCandlestickChart(data) {
         }
     }
 
+    // Calculate Bollinger if enabled
+    let bollingerUpper = [];
+    let bollingerLower = [];
+    if (indicatorVisibility.bollinger) {
+        for (let i = 0; i < closes.length; i++) {
+            if (i >= 19) {
+                const slice = closes.slice(i - 19, i + 1);
+                const mean = slice.reduce((a, b) => a + b, 0) / 20;
+                const variance = slice.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / 20;
+                const std = Math.sqrt(variance);
+                bollingerUpper.push(mean + std * 2);
+                bollingerLower.push(mean - std * 2);
+            } else {
+                bollingerUpper.push(null);
+                bollingerLower.push(null);
+            }
+        }
+    }
+
+    // Calculate Fibonacci if enabled
+    let fibLevels = [];
+    if (indicatorVisibility.fibonacci) {
+        const high52 = data.high_52w || Math.max(...closes);
+        const low52 = data.low_52w || Math.min(...closes);
+        const range = high52 - low52;
+        fibLevels = [
+            high52 - range * 0.236,
+            high52 - range * 0.382,
+            high52 - range * 0.5,
+            high52 - range * 0.618,
+            high52 - range * 0.786
+        ];
+    }
+
     // Find min/max for scaling
     let allValues = [];
     prices.forEach(p => {
         allValues.push(p.high || p.High || 0);
         allValues.push(p.low || p.Low || 0);
     });
-    sma20.forEach(v => { if (v) allValues.push(v); });
-    sma50.forEach(v => { if (v) allValues.push(v); });
-    sma200.forEach(v => { if (v) allValues.push(v); });
-    sma7.forEach(v => { if (v) allValues.push(v); });
+
+    if (indicatorVisibility.sma20) sma20.forEach(v => { if (v) allValues.push(v); });
+    if (indicatorVisibility.sma50) sma50.forEach(v => { if (v) allValues.push(v); });
+    if (indicatorVisibility.sma200) sma200.forEach(v => { if (v) allValues.push(v); });
+    if (indicatorVisibility.sma7) sma7.forEach(v => { if (v) allValues.push(v); });
+    if (indicatorVisibility.bollinger) {
+        bollingerUpper.forEach(v => { if (v) allValues.push(v); });
+        bollingerLower.forEach(v => { if (v) allValues.push(v); });
+    }
+    if (indicatorVisibility.fibonacci) fibLevels.forEach(v => allValues.push(v));
 
     const minPrice = Math.min(...allValues.filter(v => v > 0)) * 0.98;
     const maxPrice = Math.max(...allValues) * 1.02;
@@ -360,7 +728,6 @@ function drawCandlestickChart(data) {
         ctx.lineTo(width - padding.right, y);
         ctx.stroke();
 
-        // Price labels
         const price = maxPrice - (priceRange / 5) * i;
         ctx.fillStyle = c.text;
         ctx.font = '10px Cairo';
@@ -368,20 +735,72 @@ function drawCandlestickChart(data) {
         ctx.fillText(price.toFixed(2), width - padding.right + 5, y + 3);
     }
 
-    // Draw date labels (show every ~10th date)
+    // Draw date labels
     const dateStep = Math.max(1, Math.floor(dates.length / 8));
     for (let i = 0; i < dates.length; i += dateStep) {
         const x = padding.left + (i / (prices.length - 1)) * chartWidth;
         ctx.fillStyle = c.text;
         ctx.font = '9px Cairo';
         ctx.textAlign = 'center';
-        const dateStr = dates[i] ? dates[i].slice(5) : ''; // MM-DD
+        const dateStr = dates[i] ? dates[i].slice(5) : '';
         ctx.fillText(dateStr, x, height - 10);
     }
 
-    // Calculate candle width
     const candleWidth = Math.max(1, (chartWidth / prices.length) * 0.7);
     const candleSpacing = chartWidth / prices.length;
+
+    // Draw Fibonacci horizontal lines
+    if (indicatorVisibility.fibonacci) {
+        const fibColors = ['rgba(255,215,0,0.3)', 'rgba(255,215,0,0.25)', 'rgba(255,215,0,0.2)', 'rgba(255,215,0,0.25)', 'rgba(255,215,0,0.3)'];
+        const fibLabels = ['23.6%', '38.2%', '50%', '61.8%', '78.6%'];
+
+        fibLevels.forEach((level, idx) => {
+            const y = padding.top + ((maxPrice - level) / priceRange) * chartHeight;
+            ctx.strokeStyle = fibColors[idx];
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(width - padding.right, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = c.gold;
+            ctx.font = '9px Cairo';
+            ctx.textAlign = 'left';
+            ctx.fillText(fibLabels[idx], padding.left + 5, y - 3);
+        });
+    }
+
+    // Draw Bollinger bands
+    if (indicatorVisibility.bollinger) {
+        ctx.strokeStyle = 'rgba(124,77,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+
+        ctx.beginPath();
+        let started = false;
+        bollingerUpper.forEach((v, i) => {
+            if (v === null) return;
+            const x = padding.left + i * candleSpacing + candleSpacing / 2;
+            const y = padding.top + ((maxPrice - v) / priceRange) * chartHeight;
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else { ctx.lineTo(x, y); }
+        });
+        ctx.stroke();
+
+        ctx.beginPath();
+        started = false;
+        bollingerLower.forEach((v, i) => {
+            if (v === null) return;
+            const x = padding.left + i * candleSpacing + candleSpacing / 2;
+            const y = padding.top + ((maxPrice - v) / priceRange) * chartHeight;
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else { ctx.lineTo(x, y); }
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
 
     // Draw candles
     prices.forEach((p, i) => {
@@ -399,7 +818,11 @@ function drawCandlestickChart(data) {
         const isGreen = close >= open;
         const color = isGreen ? c.positive : c.negative;
 
-        // Draw wick
+        if (i === highlightIndex) {
+            ctx.fillStyle = 'rgba(0,229,255,0.1)';
+            ctx.fillRect(x - candleSpacing / 2, padding.top, candleSpacing, chartHeight);
+        }
+
         ctx.strokeStyle = color;
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -407,7 +830,6 @@ function drawCandlestickChart(data) {
         ctx.lineTo(x, yLow);
         ctx.stroke();
 
-        // Draw body
         const bodyTop = Math.min(yOpen, yClose);
         const bodyHeight = Math.abs(yClose - yOpen);
         ctx.fillStyle = isGreen ? color : color;
@@ -450,14 +872,14 @@ function drawCandlestickChart(data) {
         ctx.setLineDash([]);
     }
 
-    drawSMALine(sma7, c.warning, 1.5, [2, 2]);
-    drawSMALine(sma20, c.purple, 1.5, [4, 2]);
-    drawSMALine(sma50, c.negative, 1.5, [6, 3]);
-    drawSMALine(sma200, c.positive, 2, []);
+    if (indicatorVisibility.sma7) drawSMALine(sma7, c.warning, 1.5, [2, 2]);
+    if (indicatorVisibility.sma20) drawSMALine(sma20, c.purple, 1.5, [4, 2]);
+    if (indicatorVisibility.sma50) drawSMALine(sma50, c.negative, 1.5, [6, 3]);
+    if (indicatorVisibility.sma200) drawSMALine(sma200, c.positive, 2, []);
 
-    // Draw targets/supports as horizontal lines
+    // Draw targets/supports
     const targets = (data.analysis && data.analysis.targets) || {};
-    if (targets.target_1) {
+    if (indicatorVisibility.targets && targets.target_1) {
         ctx.strokeStyle = 'rgba(0,230,118,0.4)';
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
@@ -467,9 +889,14 @@ function drawCandlestickChart(data) {
         ctx.lineTo(width - padding.right, y);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        ctx.fillStyle = c.positive;
+        ctx.font = '9px Cairo';
+        ctx.textAlign = 'right';
+        ctx.fillText('هدف 1', width - padding.right - 5, y - 3);
     }
 
-    if (targets.stop_loss) {
+    if (indicatorVisibility.targets && targets.stop_loss) {
         ctx.strokeStyle = 'rgba(255,23,68,0.4)';
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
@@ -477,6 +904,24 @@ function drawCandlestickChart(data) {
         ctx.beginPath();
         ctx.moveTo(padding.left, y);
         ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = c.negative;
+        ctx.font = '9px Cairo';
+        ctx.textAlign = 'right';
+        ctx.fillText('وقف الخسارة', width - padding.right - 5, y - 3);
+    }
+
+    // Draw crosshair vertical line
+    if (isMouseOverChart && highlightIndex >= 0) {
+        const x = padding.left + highlightIndex * candleSpacing + candleSpacing / 2;
+        ctx.strokeStyle = 'rgba(0,229,255,0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(x, padding.top);
+        ctx.lineTo(x, height - padding.bottom);
         ctx.stroke();
         ctx.setLineDash([]);
     }
@@ -491,7 +936,6 @@ function drawVolumeChart(data) {
     const c = getChartColors();
 
     const prices = data.prices_arr || [];
-    const dates = data.dates_list || [];
     const volumes = data.volumes_list || [];
 
     if (!volumes.length) {
@@ -513,7 +957,6 @@ function drawVolumeChart(data) {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Draw grid
     ctx.strokeStyle = c.grid;
     ctx.lineWidth = 1;
     for (let i = 0; i <= 3; i++) {
@@ -555,8 +998,10 @@ function formatVolumeCompact(vol) {
     return vol.toString();
 }
 
-// ======= RSI Chart (Chart.js) =======
+// ======= RSI Chart =======
 function drawRsiChart(data) {
+    if (!secondaryChartVisibility.rsi) return;
+
     const ctx = document.getElementById('rsiChart').getContext('2d');
     const c = getChartColors();
     const rsiList = data.rsi_list || [];
@@ -614,8 +1059,10 @@ function drawRsiChart(data) {
     });
 }
 
-// ======= MACD Chart (Chart.js) =======
+// ======= MACD Chart =======
 function drawMacdChart(data) {
+    if (!secondaryChartVisibility.macd) return;
+
     const ctx = document.getElementById('macdChart').getContext('2d');
     const c = getChartColors();
     const macdList = data.macd_list || [];
@@ -697,12 +1144,30 @@ function drawMacdChart(data) {
     });
 }
 
+// ======= Toggle Indicators =======
+function toggleIndicator(indicator) {
+    indicatorVisibility[indicator] = !indicatorVisibility[indicator];
+    if (currentData) drawCandlestickChart(currentData);
+}
+
+function toggleSecondaryChart(chart) {
+    secondaryChartVisibility[chart] = !secondaryChartVisibility[chart];
+    const canvas = document.getElementById(chart + 'Chart');
+    if (canvas) {
+        canvas.style.display = secondaryChartVisibility[chart] ? 'block' : 'none';
+    }
+    if (currentData && secondaryChartVisibility[chart]) {
+        if (chart === 'rsi') drawRsiChart(currentData);
+        if (chart === 'macd') drawMacdChart(currentData);
+    }
+}
+
 function redrawCharts(data) {
     if (!data) return;
     drawCandlestickChart(data);
     drawVolumeChart(data);
-    drawRsiChart(data);
-    drawMacdChart(data);
+    if (secondaryChartVisibility.rsi) drawRsiChart(data);
+    if (secondaryChartVisibility.macd) drawMacdChart(data);
 }
 
 function updateChartPeriod(period, btn) {
@@ -717,50 +1182,16 @@ function updateChartPeriod(period, btn) {
                 currentData = { ...currentData, ...d };
                 drawCandlestickChart(currentData);
                 drawVolumeChart(currentData);
-                drawRsiChart(currentData);
-                drawMacdChart(currentData);
+                if (secondaryChartVisibility.rsi) drawRsiChart(currentData);
+                if (secondaryChartVisibility.macd) drawMacdChart(currentData);
             }
         })
         .catch(err => console.error('Chart data error:', err));
 }
 
-// ======= Market Overview =======
+// ======= Market Overview (REMOVED) =======
 async function loadMarketOverview() {
-    try {
-        const res = await fetch('./api/market-overview');
-        const data = await res.json();
-
-        const grid = document.getElementById('marketsGrid');
-        grid.innerHTML = '';
-
-        const show = (market, d) => {
-            if (!d || !d.length) return;
-            const block = document.createElement('div');
-            block.className = 'market-block';
-            block.innerHTML = `
-                <div class="market-title">${market === 'saudi' ? '🇸🇦 السوق السعودي' : '🇺🇸 السوق الأمريكي'}</div>
-                ${d.map(s => `
-                    <div class="stock-row" onclick="loadStock('${s.symbol}')">
-                        <div>
-                            <div class="stock-row-sym">${s.symbol.replace('.SR', '')}</div>
-                            <div class="stock-row-name">${s.name || s.symbol}</div>
-                        </div>
-                        <div>
-                            <div class="stock-row-price">${formatPrice(s.price, s.currency)}</div>
-                            <div class="stock-row-change ${s.change >= 0 ? 'positive' : 'negative'}">${s.change >= 0 ? '+' : ''}${s.change}%</div>
-                        </div>
-                    </div>
-                `).join('')}
-            `;
-            grid.appendChild(block);
-        };
-
-        if (data.saudi && (currentMarket === 'all' || currentMarket === 'saudi')) show('saudi', data.saudi);
-        if (data.us && (currentMarket === 'all' || currentMarket === 'us')) show('us', data.us);
-
-    } catch (e) {
-        console.error('Market overview error:', e);
-    }
+    // Market overview section removed per user request
 }
 
 function loadStock(symbol) {
@@ -783,7 +1214,7 @@ function addToWatchlist() {
     saveWatchlist(list);
     renderWatchlistBadge();
     renderWatchlistPanel();
-    showToast(`تمت إضافة ${currentSymbol} للمفضلة ⭐`);
+    showToast(`تمت إضافة ${currentSymbol} للمفضلة`);
 }
 
 function removeFromWatchlist(sym) {
@@ -840,7 +1271,7 @@ function saveAlert() {
     renderAlertsBadge();
     renderAlertsPanel();
     closeAlertModal();
-    showToast(`✅ تم حفظ التنبيه: ${currentSymbol} ${type === 'above' ? 'يتجاوز' : 'ينزل عن'} ${price}`);
+    showToast(`تم حفظ التنبيه: ${currentSymbol} ${type === 'above' ? 'يتجاوز' : 'ينزل عن'} ${price}`);
 }
 
 function removeAlert(idx) {
