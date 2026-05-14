@@ -6,6 +6,11 @@ from datetime import datetime, timedelta
 from data_fetcher import StockDataFetcher
 from technical_analysis import TechnicalAnalyzer
 from report_generator import ReportGenerator
+from backtesting import BacktestingEngine
+from risk_manager import RiskManager
+from news_analyzer import NewsAnalyzer
+from multi_timeframe import MultiTimeframeAnalyzer
+from alert_system import AlertSystem
 
 app = Flask(__name__)
 CORS(app)
@@ -13,6 +18,11 @@ CORS(app)
 fetcher = StockDataFetcher()
 analyzer = TechnicalAnalyzer()
 reporter = ReportGenerator()
+backtester = BacktestingEngine(analyzer)
+risk_manager = RiskManager()
+news_analyzer = NewsAnalyzer()
+mtf_analyzer = MultiTimeframeAnalyzer(fetcher)
+alert_system = AlertSystem(fetcher, analyzer, news_analyzer)
 
 # ── كاش قوي ──
 _cache = {}
@@ -70,6 +80,19 @@ def analyze_stock(symbol):
         # Calculate Fibonacci levels
         fibonacci = analyzer.calculate_fibonacci(data['prices'])
 
+        # Risk Analysis
+        risk_analysis = risk_manager.calculate_risk_reward(
+            data['current'],
+            analysis['targets']['target_1'],
+            analysis['targets']['stop_loss']
+        )
+
+        # News Analysis
+        news_data = news_analyzer.get_news(sym, mkt, limit=5)
+
+        # Multi-timeframe Analysis
+        mtf_data = mtf_analyzer.analyze_all_timeframes(sym, mkt)
+
         result = {
             **safe_data(data),
             'analysis': analysis,
@@ -77,6 +100,9 @@ def analyze_stock(symbol):
             'prices_arr': prices_arr,
             'dates_list': dates_list,
             'fibonacci': fibonacci,
+            'risk_analysis': risk_analysis,
+            'news': news_data,
+            'multi_timeframe': mtf_data,
             **chart_data,
         }
         cache_set(key, result, minutes=10)
@@ -295,6 +321,459 @@ def search():
     if not data:
         return jsonify({'error': 'لم يتم العثور على السهم'})
     return jsonify(safe_data(data))
+
+# ═══════════════════════════════════════════════════════════
+# ═══ المرحلة الثانية: Backtesting API ═══════════════════
+# ═══════════════════════════════════════════════════════════
+
+@app.route('/api/backtest/<symbol>')
+def backtest_stock(symbol):
+    """تشغيل Backtest على سهم"""
+    sym = symbol.upper().replace('.SR', '')
+    mkt = 'saudi' if sym.isdigit() else 'us'
+
+    strategy = request.args.get('strategy', 'sma_cross')
+    initial_capital = float(request.args.get('capital', 10000))
+    stop_loss = float(request.args.get('stop_loss', 0.05))
+    take_profit = float(request.args.get('take_profit', 0.10))
+
+    key = f"backtest_{sym}_{mkt}_{strategy}_{initial_capital}_{stop_loss}_{take_profit}"
+    cached = cache_get(key)
+    if cached:
+        return jsonify(cached)
+
+    data = fetcher.get_stock_data(sym, mkt)
+    if not data:
+        return jsonify({'error': 'تعذّر جلب البيانات'})
+
+    try:
+        result = backtester.run_backtest(
+            data['prices'],
+            strategy=strategy,
+            initial_capital=initial_capital,
+            stop_loss_pct=stop_loss,
+            take_profit_pct=take_profit
+        )
+
+        if 'error' in result:
+            return jsonify(result)
+
+        # Add metadata
+        result['symbol'] = sym
+        result['market'] = mkt
+        result['strategy_name'] = backtester.STRATEGIES.get(strategy, strategy)
+        result['strategy_key'] = strategy
+
+        cache_set(key, result, minutes=30)
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        print(f"Backtest error: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': f'خطأ في الـ Backtest: {str(e)}'})
+
+@app.route('/api/backtest-compare/<symbol>')
+def backtest_compare(symbol):
+    """مقارنة جميع الاستراتيجيات"""
+    sym = symbol.upper().replace('.SR', '')
+    mkt = 'saudi' if sym.isdigit() else 'us'
+
+    key = f"backtest_compare_{sym}_{mkt}"
+    cached = cache_get(key)
+    if cached:
+        return jsonify(cached)
+
+    data = fetcher.get_stock_data(sym, mkt)
+    if not data:
+        return jsonify({'error': 'تعذّر جلب البيانات'})
+
+    try:
+        results = backtester.compare_strategies(data['prices'])
+
+        comparison = {
+            'symbol': sym,
+            'market': mkt,
+            'strategies': results,
+            'best_strategy': None,
+            'best_return': -float('inf')
+        }
+
+        for key, result in results.items():
+            if result.get('total_return_pct', -999) > comparison['best_return']:
+                comparison['best_return'] = result['total_return_pct']
+                comparison['best_strategy'] = key
+
+        cache_set(f"backtest_compare_{sym}_{mkt}", comparison, minutes=30)
+        return jsonify(comparison)
+    except Exception as e:
+        return jsonify({'error': f'خطأ في المقارنة: {str(e)}'})
+
+@app.route('/api/backtest-strategies')
+def backtest_strategies():
+    """قائمة الاستراتيجيات المتاحة"""
+    return jsonify({
+        'strategies': [
+            {'key': k, 'name': v} for k, v in backtester.STRATEGIES.items()
+        ]
+    })
+
+# ═══════════════════════════════════════════════════════════
+# ═══ المرحلة الثانية: Risk Management API ═════════════════
+# ═══════════════════════════════════════════════════════════
+
+@app.route('/api/risk/position-size', methods=['POST'])
+def calculate_position_size():
+    """حساب حجم المركز المثالي"""
+    data = request.get_json() or {}
+
+    account_balance = float(data.get('account_balance', 10000))
+    entry_price = float(data.get('entry_price', 100))
+    stop_loss = float(data.get('stop_loss', 95))
+    risk_per_trade = float(data.get('risk_per_trade', 0.02))
+    max_position_pct = float(data.get('max_position_pct', 0.25))
+
+    result = risk_manager.calculate_position_size(
+        account_balance, entry_price, stop_loss,
+        risk_per_trade, max_position_pct
+    )
+    return jsonify(result)
+
+@app.route('/api/risk/kelly', methods=['POST'])
+def calculate_kelly():
+    """حساب Kelly Criterion"""
+    data = request.get_json() or {}
+
+    win_rate = float(data.get('win_rate', 0.5))
+    avg_win_pct = float(data.get('avg_win_pct', 5))
+    avg_loss_pct = float(data.get('avg_loss_pct', 3))
+
+    result = risk_manager.calculate_kelly_criterion(win_rate, avg_win_pct, avg_loss_pct)
+    return jsonify(result)
+
+@app.route('/api/risk/risk-reward', methods=['POST'])
+def calculate_risk_reward():
+    """حساب Risk/Reward Ratio"""
+    data = request.get_json() or {}
+
+    entry_price = float(data.get('entry_price', 100))
+    target_price = float(data.get('target_price', 110))
+    stop_loss_price = float(data.get('stop_loss_price', 95))
+
+    result = risk_manager.calculate_risk_reward(entry_price, target_price, stop_loss_price)
+    return jsonify(result)
+
+@app.route('/api/risk/stop-loss', methods=['POST'])
+def calculate_stop_loss():
+    """حساب وقف الخسارة"""
+    data = request.get_json() or {}
+
+    entry_price = float(data.get('entry_price', 100))
+    atr = float(data.get('atr', 2))
+    method = data.get('method', 'atr')
+    multiplier = float(data.get('multiplier', 2.0))
+    support_level = data.get('support_level')
+    recent_low = data.get('recent_low')
+
+    result = risk_manager.calculate_stop_loss(
+        entry_price, atr, method, multiplier,
+        support_level, recent_low
+    )
+    return jsonify(result)
+
+@app.route('/api/risk/trailing-stop', methods=['POST'])
+def calculate_trailing_stop():
+    """حساب Trailing Stop"""
+    data = request.get_json() or {}
+
+    current_price = float(data.get('current_price', 100))
+    highest_price = float(data.get('highest_price', 110))
+    trailing_pct = float(data.get('trailing_pct', 0.10))
+    atr = data.get('atr')
+    atr_multiplier = float(data.get('atr_multiplier', 3.0))
+
+    result = risk_manager.calculate_trailing_stop(
+        current_price, highest_price, trailing_pct,
+        atr, atr_multiplier
+    )
+    return jsonify(result)
+
+@app.route('/api/risk/portfolio', methods=['POST'])
+def portfolio_risk_analysis():
+    """تحليل مخاطر المحفظة"""
+    data = request.get_json() or {}
+
+    positions = data.get('positions', [])
+    account_balance = float(data.get('account_balance', 10000))
+
+    result = risk_manager.portfolio_risk_analysis(positions, account_balance)
+    return jsonify(result)
+
+@app.route('/api/risk/monte-carlo', methods=['POST'])
+def monte_carlo_simulation():
+    """محاكاة Monte Carlo"""
+    data = request.get_json() or {}
+
+    historical_returns = data.get('historical_returns', [])
+    initial_capital = float(data.get('initial_capital', 10000))
+    num_simulations = int(data.get('num_simulations', 1000))
+    num_days = int(data.get('num_days', 252))
+
+    result = risk_manager.monte_carlo_simulation(
+        historical_returns, initial_capital, num_simulations, num_days
+    )
+    return jsonify(result)
+
+# ═══════════════════════════════════════════════════════════
+# ═══ المرحلة الثانية: News & Sentiment API ════════════════
+# ═══════════════════════════════════════════════════════════
+
+@app.route('/api/news/<symbol>')
+def get_stock_news(symbol):
+    """جلب أخبار السهم"""
+    sym = symbol.upper().replace('.SR', '')
+    mkt = 'saudi' if sym.isdigit() else 'us'
+    limit = int(request.args.get('limit', 10))
+
+    key = f"news_{sym}_{mkt}_{limit}"
+    cached = cache_get(key)
+    if cached:
+        return jsonify(cached)
+
+    try:
+        result = news_analyzer.get_news(sym, mkt, limit)
+        cache_set(key, result, minutes=15)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/news/market-sentiment')
+def get_market_sentiment():
+    """جلب المشاعر العامة للسوق"""
+    key = "market_sentiment"
+    cached = cache_get(key)
+    if cached:
+        return jsonify(cached)
+
+    try:
+        result = news_analyzer.get_market_sentiment()
+        cache_set(key, result, minutes=30)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/news/sector/<sector>')
+def get_sector_news(sector):
+    """جلب أخبار القطاع"""
+    limit = int(request.args.get('limit', 5))
+
+    try:
+        result = news_analyzer.get_sector_news(sector, limit)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/news/earnings/<symbol>')
+def get_earnings_calendar(symbol):
+    """جلب تقويم الأرباح"""
+    sym = symbol.upper().replace('.SR', '')
+
+    try:
+        result = news_analyzer.get_earnings_calendar(sym)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/news/insider/<symbol>')
+def get_insider_sentiment(symbol):
+    """جلب مشاعر التداول الداخلي"""
+    sym = symbol.upper().replace('.SR', '')
+
+    try:
+        result = news_analyzer.get_insider_sentiment(sym)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+# ═══════════════════════════════════════════════════════════
+# ═══ المرحلة الثانية: Multi-Timeframe API ═════════════════
+# ═══════════════════════════════════════════════════════════
+
+@app.route('/api/multi-timeframe/<symbol>')
+def get_multi_timeframe(symbol):
+    """تحليل متعدد الفريمات الزمنية"""
+    sym = symbol.upper().replace('.SR', '')
+    mkt = 'saudi' if sym.isdigit() else 'us'
+
+    key = f"mtf_{sym}_{mkt}"
+    cached = cache_get(key)
+    if cached:
+        return jsonify(cached)
+
+    try:
+        result = mtf_analyzer.analyze_all_timeframes(sym, mkt)
+        cache_set(key, result, minutes=20)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+# ═══════════════════════════════════════════════════════════
+# ═══ المرحلة الثانية: Alerts API ══════════════════════════
+# ═══════════════════════════════════════════════════════════
+
+@app.route('/api/alerts', methods=['GET'])
+def get_alerts():
+    """جلب قائمة التنبيهات"""
+    symbol = request.args.get('symbol')
+    active_only = request.args.get('active_only', 'false').lower() == 'true'
+    return jsonify(alert_system.get_alerts(symbol, active_only))
+
+@app.route('/api/alerts', methods=['POST'])
+def create_alert():
+    """إنشاء تنبيه جديد"""
+    data = request.get_json() or {}
+
+    alert = alert_system.add_alert(
+        symbol=data.get('symbol', ''),
+        alert_type=data.get('alert_type', 'price_above'),
+        threshold=float(data.get('threshold', 0)),
+        market=data.get('market', 'us'),
+        message=data.get('message'),
+        enabled=data.get('enabled', True),
+        one_time=data.get('one_time', True)
+    )
+    return jsonify(alert)
+
+@app.route('/api/alerts/<alert_id>', methods=['DELETE'])
+def delete_alert(alert_id):
+    """حذف تنبيه"""
+    alert_system.remove_alert(alert_id)
+    return jsonify({'success': True})
+
+@app.route('/api/alerts/<alert_id>/toggle', methods=['POST'])
+def toggle_alert(alert_id):
+    """تفعيل/تعطيل تنبيه"""
+    alert = alert_system.toggle_alert(alert_id)
+    if alert:
+        return jsonify(alert)
+    return jsonify({'error': 'التنبيه غير موجود'})
+
+@app.route('/api/alerts/smart', methods=['POST'])
+def create_smart_alerts():
+    """إنشاء تنبيهات ذكية"""
+    data = request.get_json() or {}
+    symbol = data.get('symbol', '')
+    market = data.get('market', 'us')
+
+    sym = symbol.upper().replace('.SR', '')
+    mkt = 'saudi' if sym.isdigit() else 'us'
+
+    stock_data = fetcher.get_stock_data(sym, mkt)
+    if not stock_data:
+        return jsonify({'error': 'تعذّر جلب البيانات'})
+
+    analysis = analyzer.full_analysis(stock_data['prices'])
+
+    alerts = alert_system.create_smart_alerts(sym, mkt, stock_data, analysis)
+    return jsonify({'alerts_created': alerts, 'count': len(alerts)})
+
+@app.route('/api/alerts/stats')
+def get_alert_stats():
+    """إحصائيات التنبيهات"""
+    return jsonify(alert_system.get_alert_stats())
+
+@app.route('/api/alerts/history')
+def get_alert_history():
+    """سجل التنبيهات"""
+    symbol = request.args.get('symbol')
+    limit = int(request.args.get('limit', 50))
+    return jsonify(alert_system.get_alert_history(symbol, limit))
+
+# ═══════════════════════════════════════════════════════════
+# ═══ المرحلة الثانية: Combined Analysis API ═══════════════
+# ═══════════════════════════════════════════════════════════
+
+@app.route('/api/full-analysis/<symbol>')
+def full_analysis(symbol):
+    """تحليل شامل يجمع كل الميزات"""
+    sym = symbol.upper().replace('.SR', '')
+    mkt = 'saudi' if sym.isdigit() else 'us'
+
+    key = f"full_analysis_{sym}_{mkt}"
+    cached = cache_get(key)
+    if cached:
+        return jsonify(cached)
+
+    data = fetcher.get_stock_data(sym, mkt)
+    if not data:
+        return jsonify({'error': 'تعذّر جلب البيانات'})
+
+    try:
+        # Technical Analysis
+        analysis = analyzer.full_analysis(data['prices'])
+        rec = analyzer.get_recommendation(analysis)
+
+        # Risk Analysis
+        risk = risk_manager.calculate_risk_reward(
+            data['current'],
+            analysis['targets']['target_1'],
+            analysis['targets']['stop_loss']
+        )
+
+        # Position Size Recommendation
+        position_size = risk_manager.calculate_position_size(
+            10000, data['current'], analysis['targets']['stop_loss']
+        )
+
+        # News
+        news = news_analyzer.get_news(sym, mkt, limit=5)
+
+        # Multi-timeframe
+        mtf = mtf_analyzer.analyze_all_timeframes(sym, mkt)
+
+        # Backtest (quick SMA cross)
+        backtest = backtester.run_backtest(data['prices'], strategy='sma_cross', 
+                                           initial_capital=10000)
+
+        # Market Sentiment
+        market_sentiment = news_analyzer.get_market_sentiment()
+
+        result = {
+            'symbol': sym,
+            'market': mkt,
+            'price_data': safe_data(data),
+            'technical_analysis': {
+                'indicators': analysis['indicators'],
+                'trend': analysis['trend'],
+                'support': analysis['support'],
+                'resistance': analysis['resistance'],
+                'signals': analysis['signals'],
+                'targets': analysis['targets'],
+            },
+            'recommendation': rec,
+            'risk_analysis': {
+                'risk_reward': risk,
+                'position_size': position_size,
+            },
+            'news_sentiment': news,
+            'market_sentiment': market_sentiment,
+            'multi_timeframe': mtf,
+            'backtest_summary': {
+                'strategy': 'SMA Cross',
+                'total_return_pct': backtest.get('total_return_pct', 0),
+                'win_rate': backtest.get('win_rate', 0),
+                'total_trades': backtest.get('total_trades', 0),
+                'sharpe_ratio': backtest.get('sharpe_ratio', 0),
+            } if 'error' not in backtest else {'error': backtest['error']},
+            'generated_at': datetime.now().isoformat(),
+        }
+
+        cache_set(key, result, minutes=10)
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        print(f"Full analysis error: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': f'خطأ في التحليل الشامل: {str(e)}'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
