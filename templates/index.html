@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Leo2Stock - منصة التحليل المالي</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <!-- ===== الهيدر ===== -->
@@ -90,8 +90,6 @@
     <!-- ===== المحتوى الرئيسي ===== -->
     <main class="main-content">
 
-        <!-- ===== الجزء الأول: شريط الأسعار + مؤشر الخوف والجشع + معلومات السهم ===== -->
-
         <!-- شريط أسعار علوي -->
         <div class="price-ticker">
             <div class="ticker-item">
@@ -116,12 +114,12 @@
             </div>
         </div>
 
-        <!-- مؤشر الخوف والجشع الديناميكي -->
+        <!-- مؤشر الخوف والجشع -->
         <div class="fear-greed-indicator" id="fear-greed-panel">
             <div class="indicator-header">
                 <span class="indicator-title">
                     <i class="fas fa-chart-line"></i>
-                    مؤشر الخوف والجشع: 
+                    مؤشر الخوف والجشع:
                     <span id="fear-greed-index">58.4</span>
                 </span>
                 <span id="fear-greed-status" class="status-badge neutral">تفاؤل</span>
@@ -197,8 +195,7 @@
             </button>
         </div>
 
-        <!-- ===== الجزء الثاني: الرسم البياني + المؤشرات + التحليل الفني ===== -->
-
+        <!-- الرسم البياني -->
         <section id="chart-section" class="section">
             <div class="section-header">
                 <h2><i class="fas fa-chart-area"></i> الرسم البياني</h2>
@@ -218,18 +215,10 @@
             </div>
             <div class="chart-indicators">
                 <div class="indicator-toggle">
-                    <label class="checkbox-label">
-                        <input type="checkbox" checked> SMA
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox"> EMA
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox"> Bollinger
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox"> Volume
-                    </label>
+                    <label class="checkbox-label"><input type="checkbox" checked> SMA</label>
+                    <label class="checkbox-label"><input type="checkbox"> EMA</label>
+                    <label class="checkbox-label"><input type="checkbox"> Bollinger</label>
+                    <label class="checkbox-label"><input type="checkbox"> Volume</label>
                 </div>
             </div>
         </section>
@@ -259,7 +248,7 @@
             <div id="rsi-results" class="scanner-results"></div>
         </section>
 
-        <!-- معلومات السهم الرئيسية -->
+        <!-- معلومات السهم -->
         <section id="stock-info" class="section">
             <div class="stock-header">
                 <div class="stock-symbol">
@@ -278,7 +267,7 @@
             </div>
         </section>
 
-        <!-- ===== الجزء الثالث: الأخبار والمشاعر (معدل ونظيف) ===== -->
+        <!-- الأخبار والمشاعر -->
         <section id="news-sentiment" class="section">
             <div class="section-header">
                 <h2><i class="fas fa-newspaper"></i> الأخبار والمشاعر</h2>
@@ -288,7 +277,6 @@
                     </button>
                 </div>
             </div>
-
             <div class="news-container">
                 <div class="news-filters">
                     <button class="news-filter active" data-filter="all">الكل</button>
@@ -297,14 +285,12 @@
                     <button class="news-filter" data-filter="economy">اقتصاد</button>
                     <button class="news-filter" data-filter="crypto">عملات رقمية</button>
                 </div>
-
                 <div id="news-feed" class="news-feed">
-                    <!-- خبر 1 -->
                     <div class="news-card featured">
                         <div class="news-badge hot">إيجابي قوي</div>
                         <div class="news-content">
                             <h3>هذه الأسهم تتحرك بقوة في جلسة اليوم</h3>
-                            <p>تعرف على أكبر الرابحين والخاسرين في أسواق الولايات المتحدة قبل إغلاق الجلسة. تحليل شامل لحركة السوق.</p>
+                            <p>تعرف على أكبر الرابحين والخاسرين في أسواق الولايات المتحدة قبل إغلاق الجلسة.</p>
                             <div class="news-meta">
                                 <span class="news-source">ChartMill</span>
                                 <span class="news-date">١٤/٠٥/٢٠٢٦</span>
@@ -312,8 +298,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- خبر 2 -->
                     <div class="news-card">
                         <div class="news-badge neutral">محايد</div>
                         <div class="news-content">
@@ -326,8 +310,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- خبر 3 -->
                     <div class="news-card">
                         <div class="news-badge neutral">محايد</div>
                         <div class="news-content">
@@ -340,40 +322,11 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- خبر 4 -->
-                    <div class="news-card">
-                        <div class="news-badge neutral">محايد</div>
-                        <div class="news-content">
-                            <h3>أي الأسهم تتداول بفجوة سعرية؟</h3>
-                            <p>نظرة على الأسهم التي فتحت بفجوة صاعدة أو هابطة في بداية الجلسة.</p>
-                            <div class="news-meta">
-                                <span class="news-source">ChartMill</span>
-                                <span class="news-date">١٤/٠٥/٢٠٢٦</span>
-                                <span class="news-reliability">ثقة: ٥٠%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- خبر 5 -->
-                    <div class="news-card">
-                        <div class="news-badge neutral">محايد</div>
-                        <div class="news-content">
-                            <h3>أسهم التكنولوجيا تتحرك في الجلسة اللحظية</h3>
-                            <div class="news-meta">
-                                <span class="news-source">Benzinga</span>
-                                <span class="news-date">١٤/٠٥/٢٠٢٦</span>
-                                <span class="news-reliability">ثقة: ٥٠%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- خبر 6 -->
                     <div class="news-card featured">
                         <div class="news-badge hot">إيجابي قوي</div>
                         <div class="news-content">
                             <h3>داو جونز يقفز ٢٥٠ نقطة ومبيعات التجزئة ترتفع</h3>
-                            <p>الأسهم الأمريكية ترتفع بقيادة قطاع التكنولوجيا. مبيعات التجزئة تزداد ٠.٥٪ في أبريل. الذهب يصعد والنفط يتراجع.</p>
+                            <p>الأسهم الأمريكية ترتفع بقيادة قطاع التكنولوجيا.</p>
                             <div class="news-meta">
                                 <span class="news-source">Benzinga</span>
                                 <span class="news-date">١٤/٠٥/٢٠٢٦</span>
@@ -381,13 +334,11 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- خبر 7 -->
                     <div class="news-card">
                         <div class="news-badge neutral">محايد</div>
                         <div class="news-content">
                             <h3>موبيكس لابز تستحوذ على شركة معادن نادرة أمريكية</h3>
-                            <p>صفقة جديدة تعزز حضور الشركة في سلاسل التوريد الاستراتيجية للدفاع والأمن القومي.</p>
+                            <p>صفقة جديدة تعزز حضور الشركة في سلاسل التوريد الاستراتيجية.</p>
                             <div class="news-meta">
                                 <span class="news-source">Finnhub</span>
                                 <span class="news-date">١٤/٠٥/٢٠٢٦</span>
@@ -395,44 +346,14 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- خبر 8 -->
-                    <div class="news-card">
-                        <div class="news-badge neutral">محايد</div>
-                        <div class="news-content">
-                            <h3>موبيكس لابز توقع اتفاقية استحواذ غير ملزمة</h3>
-                            <p>الصفقة ستضع الشركة في موقع استراتيجي لدعم البنية التحتية للذكاء الاصطناعي والدفاع.</p>
-                            <div class="news-meta">
-                                <span class="news-source">Benzinga</span>
-                                <span class="news-date">١٤/٠٥/٢٠٢٦</span>
-                                <span class="news-reliability">ثقة: ٥٠%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- خبر 9 -->
                     <div class="news-card">
                         <div class="news-badge neutral">محايد</div>
                         <div class="news-content">
                             <h3>موبيكس لابز تحصل على طلب جديد لطائرات بوينج ٧٣٧</h3>
-                            <p>طلب إضافي لتكنولوجيا الشركة في طائرات بوينج ٧٣٧NG يعزز مكانتها في سوق الطيران.</p>
+                            <p>طلب إضافي لتكنولوجيا الشركة في طائرات بوينج ٧٣٧NG.</p>
                             <div class="news-meta">
                                 <span class="news-source">Finnhub</span>
                                 <span class="news-date">١٤/٠٥/٢٠٢٦</span>
-                                <span class="news-reliability">ثقة: ٥٠%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- خبر 10 -->
-                    <div class="news-card">
-                        <div class="news-badge neutral">محايد</div>
-                        <div class="news-content">
-                            <h3>ما الجديد في سهم موبيكس لابز؟</h3>
-                            <p>الشركة تحصل على طلب جوي متكرر لأنظمة بوينج ٧٣٧NG مما يعزز موثوقيتها في سوق الطيران.</p>
-                            <div class="news-meta">
-                                <span class="news-source">Benzinga</span>
-                                <span class="news-date">١٢/٠٥/٢٠٢٦</span>
                                 <span class="news-reliability">ثقة: ٥٠%</span>
                             </div>
                         </div>
@@ -457,23 +378,17 @@
                     <div class="sentiment-breakdown">
                         <div class="breakdown-item">
                             <span class="breakdown-label">إيجابي</span>
-                            <div class="breakdown-bar">
-                                <div class="breakdown-fill positive" style="width: 65%"></div>
-                            </div>
+                            <div class="breakdown-bar"><div class="breakdown-fill positive" style="width: 65%"></div></div>
                             <span class="breakdown-value">٦٥%</span>
                         </div>
                         <div class="breakdown-item">
                             <span class="breakdown-label">محايد</span>
-                            <div class="breakdown-bar">
-                                <div class="breakdown-fill neutral" style="width: 25%"></div>
-                            </div>
+                            <div class="breakdown-bar"><div class="breakdown-fill neutral" style="width: 25%"></div></div>
                             <span class="breakdown-value">٢٥%</span>
                         </div>
                         <div class="breakdown-item">
                             <span class="breakdown-label">سلبي</span>
-                            <div class="breakdown-bar">
-                                <div class="breakdown-fill negative" style="width: 10%"></div>
-                            </div>
+                            <div class="breakdown-bar"><div class="breakdown-fill negative" style="width: 10%"></div></div>
                             <span class="breakdown-value">١٠%</span>
                         </div>
                     </div>
@@ -481,7 +396,7 @@
             </div>
         </section>
 
-        <!-- ===== الجزء الرابع: تحليل متعدد الأطر الزمنية ===== -->
+        <!-- تحليل متعدد الأطر الزمنية -->
         <section id="multi-timeframe" class="section">
             <div class="section-header">
                 <h2><i class="fas fa-layer-group"></i> تحليل متعدد الأطر الزمنية</h2>
@@ -491,7 +406,6 @@
                     </button>
                 </div>
             </div>
-
             <div class="mtf-container">
                 <div class="mtf-signal-card bearish">
                     <div class="mtf-header">
@@ -521,7 +435,6 @@
                         </div>
                     </div>
                 </div>
-
                 <div class="mtf-signal-card bearish-weak">
                     <div class="mtf-header">
                         <span class="mtf-badge bearish-weak">هابط ضعيف</span>
@@ -550,7 +463,6 @@
                         </div>
                     </div>
                 </div>
-
                 <div class="mtf-signal-card bullish-weak">
                     <div class="mtf-header">
                         <span class="mtf-badge bullish-weak">صاعد ضعيف</span>
@@ -580,7 +492,6 @@
                     </div>
                 </div>
             </div>
-
             <div class="recommendation-panel">
                 <div class="recommendation-header">
                     <i class="fas fa-lightbulb"></i>
@@ -597,7 +508,7 @@
             </div>
         </section>
 
-        <!-- ===== الجزء الخامس: إدارة المخاطر ===== -->
+        <!-- إدارة المخاطر -->
         <section id="risk-manager" class="section">
             <div class="section-header">
                 <h2><i class="fas fa-shield-halved"></i> إدارة المخاطر</h2>
@@ -626,9 +537,18 @@
                 <div class="risk-card">
                     <h3>حدود المخاطرة اليومية</h3>
                     <div class="daily-limits">
-                        <div class="limit-item"><div class="limit-info"><span class="limit-label">الخسارة اليومية القصوى</span><span class="limit-value">$300 / $1000</span></div><div class="limit-bar"><div class="limit-progress" style="width: 30%"></div></div></div>
-                        <div class="limit-item"><div class="limit-info"><span class="limit-label">عدد الصفقات اليومية</span><span class="limit-value">5 / 10</span></div><div class="limit-bar"><div class="limit-progress" style="width: 50%"></div></div></div>
-                        <div class="limit-item"><div class="limit-info"><span class="limit-label">الرافعة المالية</span><span class="limit-value">1:5 / 1:20</span></div><div class="limit-bar"><div class="limit-progress" style="width: 25%"></div></div></div>
+                        <div class="limit-item">
+                            <div class="limit-info"><span class="limit-label">الخسارة اليومية القصوى</span><span class="limit-value">$300 / $1000</span></div>
+                            <div class="limit-bar"><div class="limit-progress" style="width: 30%"></div></div>
+                        </div>
+                        <div class="limit-item">
+                            <div class="limit-info"><span class="limit-label">عدد الصفقات اليومية</span><span class="limit-value">5 / 10</span></div>
+                            <div class="limit-bar"><div class="limit-progress" style="width: 50%"></div></div>
+                        </div>
+                        <div class="limit-item">
+                            <div class="limit-info"><span class="limit-label">الرافعة المالية</span><span class="limit-value">1:5 / 1:20</span></div>
+                            <div class="limit-bar"><div class="limit-progress" style="width: 25%"></div></div>
+                        </div>
                     </div>
                 </div>
                 <div class="risk-card">
@@ -643,7 +563,7 @@
             </div>
         </section>
 
-        <!-- ===== الجزء السادس: نظام التنبيهات ===== -->
+        <!-- نظام التنبيهات -->
         <section id="alerts" class="section">
             <div class="section-header">
                 <h2><i class="fas fa-bell"></i> نظام التنبيهات</h2>
@@ -656,10 +576,23 @@
                     <h3>إنشاء تنبيه جديد</h3>
                     <div class="form-row">
                         <div class="input-group"><label>الرمز</label><input type="text" id="alert-symbol" placeholder="AAPL"></div>
-                        <div class="input-group"><label>نوع التنبيه</label><select id="alert-type"><option value="price">سعر</option><option value="volume">حجم</option><option value="indicator">مؤشر</option><option value="news">خبر</option></select></div>
+                        <div class="input-group"><label>نوع التنبيه</label>
+                            <select id="alert-type">
+                                <option value="price">سعر</option>
+                                <option value="volume">حجم</option>
+                                <option value="indicator">مؤشر</option>
+                                <option value="news">خبر</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="form-row">
-                        <div class="input-group"><label>الشرط</label><select id="alert-condition"><option value="above">أعلى من</option><option value="below">أقل من</option><option value="crosses">يتقاطع</option></select></div>
+                        <div class="input-group"><label>الشرط</label>
+                            <select id="alert-condition">
+                                <option value="above">أعلى من</option>
+                                <option value="below">أقل من</option>
+                                <option value="crosses">يتقاطع</option>
+                            </select>
+                        </div>
                         <div class="input-group"><label>القيمة</label><input type="number" id="alert-value" step="0.01"></div>
                     </div>
                     <div class="form-row">
@@ -681,7 +614,10 @@
                     <h3>التنبيهات النشطة</h3>
                     <div id="active-alerts" class="alerts-grid">
                         <div class="alert-item active">
-                            <div class="alert-info"><span class="alert-symbol">AAPL</span><span class="alert-condition">سعر > $150</span></div>
+                            <div class="alert-info">
+                                <span class="alert-symbol">AAPL</span>
+                                <span class="alert-condition">سعر > $150</span>
+                            </div>
                             <div class="alert-status"><span class="status-badge active">نشط</span></div>
                             <div class="alert-actions">
                                 <button class="btn-icon small" title="تعديل"><i class="fas fa-edit"></i></button>
@@ -693,7 +629,7 @@
             </div>
         </section>
 
-        <!-- ===== الجزء السابع: الاختبار التاريخي ===== -->
+        <!-- الاختبار التاريخي -->
         <section id="backtesting" class="section">
             <div class="section-header">
                 <h2><i class="fas fa-clock-rotate-left"></i> الاختبار التاريخي</h2>
@@ -705,13 +641,36 @@
                 <div class="backtest-config">
                     <h3>إعدادات الاختبار</h3>
                     <div class="config-grid">
-                        <div class="input-group"><label>الاستراتيجية</label><select id="backtest-strategy"><option value="sma">تقاطع المتوسطات المتحركة</option><option value="rsi">RSI</option><option value="macd">MACD</option><option value="bollinger">Bollinger Bands</option><option value="custom">مخصص</option></select></div>
+                        <div class="input-group"><label>الاستراتيجية</label>
+                            <select id="backtest-strategy">
+                                <option value="sma">تقاطع المتوسطات المتحركة</option>
+                                <option value="rsi">RSI</option>
+                                <option value="macd">MACD</option>
+                                <option value="bollinger">Bollinger Bands</option>
+                                <option value="custom">مخصص</option>
+                            </select>
+                        </div>
                         <div class="input-group"><label>الرمز</label><input type="text" id="backtest-symbol" placeholder="AAPL"></div>
-                        <div class="input-group"><label>الفترة</label><select id="backtest-period"><option value="1y">سنة</option><option value="2y">سنتين</option><option value="5y">5 سنوات</option><option value="max">الكل</option></select></div>
-                        <div class="input-group"><label>الإطار الزمني</label><select id="backtest-tf"><option value="1d">يومي</option><option value="1h">ساعة</option><option value="15m">15 دقيقة</option></select></div>
+                        <div class="input-group"><label>الفترة</label>
+                            <select id="backtest-period">
+                                <option value="1y">سنة</option>
+                                <option value="2y">سنتين</option>
+                                <option value="5y">5 سنوات</option>
+                                <option value="max">الكل</option>
+                            </select>
+                        </div>
+                        <div class="input-group"><label>الإطار الزمني</label>
+                            <select id="backtest-tf">
+                                <option value="1d">يومي</option>
+                                <option value="1h">ساعة</option>
+                                <option value="15m">15 دقيقة</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="strategy-params" id="strategy-params"></div>
-                    <button id="run-backtest" class="btn-primary btn-large"><i class="fas fa-play"></i> تشغيل الاختبار</button>
+                    <button id="run-backtest" class="btn-primary btn-large">
+                        <i class="fas fa-play"></i> تشغيل الاختبار
+                    </button>
                 </div>
                 <div class="backtest-results hidden" id="backtest-results">
                     <h3>النتائج</h3>
@@ -725,15 +684,20 @@
                     </div>
                     <div id="backtest-chart" class="chart-container"></div>
                     <div id="backtest-trades" class="trades-table">
-                        <table><thead><tr><th>#</th><th>النوع</th><th>الدخول</th><th>الخروج</th><th>الربح/الخسارة</th><th>النسبة</th></tr></thead><tbody id="trades-tbody"></tbody></table>
+                        <table>
+                            <thead><tr><th>#</th><th>النوع</th><th>الدخول</th><th>الخروج</th><th>الربح/الخسارة</th><th>النسبة</th></tr></thead>
+                            <tbody id="trades-tbody"></tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- ===== الجزء الثامن: التقرير PDF ===== -->
+        <!-- تقرير PDF -->
         <section id="pdf-report" class="section">
-            <div class="section-header"><h2><i class="fas fa-file-pdf"></i> تقرير PDF</h2></div>
+            <div class="section-header">
+                <h2><i class="fas fa-file-pdf"></i> تقرير PDF</h2>
+            </div>
             <div class="pdf-container">
                 <div class="pdf-options">
                     <h3>خيارات التقرير</h3>
@@ -745,14 +709,18 @@
                         <label class="checkbox-label"><input type="checkbox"> إدارة المخاطر</label>
                         <label class="checkbox-label"><input type="checkbox"> التوصية</label>
                     </div>
-                    <button id="generate-pdf" class="btn-primary btn-large"><i class="fas fa-file-pdf"></i> إنشاء التقرير</button>
+                    <button id="generate-pdf" class="btn-primary btn-large">
+                        <i class="fas fa-file-pdf"></i> إنشاء التقرير
+                    </button>
                 </div>
             </div>
         </section>
 
-        <!-- ===== الجزء التاسع: المفضلة ===== -->
+        <!-- المفضلة -->
         <section id="favorites" class="section">
-            <div class="section-header"><h2><i class="fas fa-star"></i> المفضلة</h2></div>
+            <div class="section-header">
+                <h2><i class="fas fa-star"></i> المفضلة</h2>
+            </div>
             <div class="favorites-container">
                 <div id="favorites-list" class="favorites-grid">
                     <div class="favorite-item">
@@ -767,33 +735,58 @@
 
     </main>
 
-    <!-- ===== التذييل ===== -->
+    <!-- التذييل -->
     <footer class="app-footer">
         <div class="footer-content">
-            <div class="footer-brand"><span class="logo-text">Leo2Stock</span><span class="version">v2.0</span></div>
-            <div class="footer-links"><a href="#">الشروط</a><a href="#">الخصوصية</a><a href="#">الدعم</a></div>
-            <div class="footer-copy"><span>© 2026 Leo2Stock. جميع الحقوق محفوظة.</span></div>
+            <div class="footer-brand">
+                <span class="logo-text">Leo2Stock</span>
+                <span class="version">v2.0</span>
+            </div>
+            <div class="footer-links">
+                <a href="#">الشروط</a>
+                <a href="#">الخصوصية</a>
+                <a href="#">الدعم</a>
+            </div>
+            <div class="footer-copy">
+                <span>© 2026 Leo2Stock. جميع الحقوق محفوظة.</span>
+            </div>
         </div>
     </footer>
 
-    <!-- ===== النوافذ المنبثقة ===== -->
+    <!-- النوافذ المنبثقة -->
     <div class="modal" id="risk-modal">
         <div class="modal-content">
-            <div class="modal-header"><h3><i class="fas fa-shield-halved"></i> إدارة المخاطر</h3><button class="modal-close">&times;</button></div>
+            <div class="modal-header">
+                <h3><i class="fas fa-shield-halved"></i> إدارة المخاطر</h3>
+                <button class="modal-close">&times;</button>
+            </div>
             <div class="modal-body"></div>
         </div>
     </div>
+
     <div class="modal" id="price-alert-modal">
         <div class="modal-content">
-            <div class="modal-header"><h3><i class="fas fa-bell"></i> تنبيه سعري</h3><button class="modal-close">&times;</button></div>
+            <div class="modal-header">
+                <h3><i class="fas fa-bell"></i> تنبيه سعري</h3>
+                <button class="modal-close">&times;</button>
+            </div>
             <div class="modal-body">
-                <div class="input-group"><label>السعر المستهدف ($)</label><input type="number" id="target-price" step="0.01"></div>
-                <div class="input-group"><label>نوع التنبيه</label><select id="alert-direction"><option value="above">عند الارتفاع فوق</option><option value="below">عند الانخفاض تحت</option></select></div>
+                <div class="input-group">
+                    <label>السعر المستهدف ($)</label>
+                    <input type="number" id="target-price" step="0.01">
+                </div>
+                <div class="input-group">
+                    <label>نوع التنبيه</label>
+                    <select id="alert-direction">
+                        <option value="above">عند الارتفاع فوق</option>
+                        <option value="below">عند الانخفاض تحت</option>
+                    </select>
+                </div>
                 <button id="set-price-alert" class="btn-primary">تعيين التنبيه</button>
             </div>
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
