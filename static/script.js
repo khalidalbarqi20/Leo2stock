@@ -1,27 +1,26 @@
 /* ============================================
-   Leo2Stock — Main JavaScript v3.0
-   Custom Candlestick Chart + AI Analysis
+   Leo2Stock — script.js v4.0
+   Candlestick + Crosshair + Timeframe
    ============================================ */
 
 // ======= State =======
 let currentMarket = 'all';
 let currentSymbol = null;
 let currentData = null;
-let candlestickCanvas = null;
-let volumeCanvas = null;
 let rsiChart = null;
 let macdChart = null;
 let alertInterval = null;
-let currentTimeframe = '1h';
+let currentTimeframe = '1d';
+let currentPeriod = '6mo';
 
 let indicatorVisibility = {
     sma7: true, sma20: true, sma50: true, sma200: true,
     fibonacci: false, bollinger: false, targets: true
 };
-
 let secondaryChartVisibility = { rsi: true, macd: true };
 
-let mouseX = 0, mouseY = 0, isMouseOverChart = false;
+let mouseX = -1, mouseY = -1, isMouseOverChart = false;
+let currentHighlightIndex = -1;
 
 // ======= Init =======
 document.addEventListener('DOMContentLoaded', () => {
@@ -33,22 +32,12 @@ document.addEventListener('DOMContentLoaded', () => {
     setupCrosshair();
 
     const symbolInput = document.getElementById('symbolInput');
-    if (symbolInput) {
-        symbolInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') searchStock();
-        });
-    }
+    if (symbolInput) symbolInput.addEventListener('keypress', e => { if (e.key === 'Enter') searchStock(); });
 
     const heroInput = document.getElementById('symbolInputHero');
-    if (heroInput) {
-        heroInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') searchFromHero();
-        });
-    }
+    if (heroInput) heroInput.addEventListener('keypress', e => { if (e.key === 'Enter') searchFromHero(); });
 
-    if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission();
-    }
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
 });
 
 // ======= Live Users =======
@@ -74,41 +63,49 @@ function setupCrosshair() {
         mouseY = e.clientY - rect.top;
         isMouseOverChart = true;
         const canvas = document.getElementById('candlestickChart');
-        if (canvas && currentData) updateCrosshairInfo(mouseX, mouseY, canvas);
+        if (canvas && currentData) {
+            const prices = currentData.prices_arr || [];
+            const padding = { top: 20, right: 60, bottom: 40, left: 10 };
+            const chartWidth = canvas.width - padding.left - padding.right;
+            const candleSpacing = chartWidth / Math.max(prices.length, 1);
+            currentHighlightIndex = Math.min(
+                prices.length - 1,
+                Math.max(0, Math.floor((mouseX - padding.left) / candleSpacing))
+            );
+            updateCrosshairInfo(currentHighlightIndex);
+            drawCandlestickChart(currentData, currentHighlightIndex, mouseX, mouseY);
+        }
     });
 
     wrapper.addEventListener('mouseleave', () => {
         isMouseOverChart = false;
+        mouseX = -1; mouseY = -1;
+        currentHighlightIndex = -1;
         const ci = document.getElementById('crosshairInfo');
         if (ci) ci.classList.add('hidden');
-        if (currentData) drawCandlestickChart(currentData);
+        if (currentData) drawCandlestickChart(currentData, -1, -1, -1);
     });
 }
 
-function updateCrosshairInfo(mx, my, canvas) {
+function updateCrosshairInfo(idx) {
     const prices = currentData.prices_arr || [];
     const dates = currentData.dates_list || [];
-    if (!prices.length) return;
+    if (!prices.length || idx < 0) return;
 
-    const padding = { top: 20, right: 60, bottom: 40, left: 10 };
-    const chartWidth = canvas.width - padding.left - padding.right;
-    const candleSpacing = chartWidth / prices.length;
-    const candleIndex = Math.min(prices.length - 1, Math.max(0, Math.floor((mx - padding.left) / candleSpacing)));
-    const p = prices[candleIndex];
+    const p = prices[idx];
     if (!p) return;
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    set('crosshair-date', dates[candleIndex] || '—');
-    set('crosshair-price', p.close || '—');
-    set('crosshair-open', p.open || '—');
-    set('crosshair-high', p.high || '—');
-    set('crosshair-low', p.low || '—');
-    set('crosshair-close', p.close || '—');
+    set('crosshair-date',   dates[idx] || '—');
+    set('crosshair-price',  formatPrice(p.close, currentData.currency));
+    set('crosshair-open',   formatPrice(p.open,  currentData.currency));
+    set('crosshair-high',   formatPrice(p.high,  currentData.currency));
+    set('crosshair-low',    formatPrice(p.low,   currentData.currency));
+    set('crosshair-close',  formatPrice(p.close, currentData.currency));
     set('crosshair-volume', formatVolume(p.volume || 0));
 
     const ci = document.getElementById('crosshairInfo');
     if (ci) ci.classList.remove('hidden');
-    drawCandlestickChart(currentData, candleIndex);
 }
 
 // ======= Theme =======
@@ -131,16 +128,22 @@ function toggleTheme() {
 function getChartColors() {
     const isDark = document.body.classList.contains('dark');
     return {
-        grid: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-        text: isDark ? '#8892a4' : '#5a6478',
-        accent: '#00e5ff', positive: '#00e676', negative: '#ff1744',
-        warning: '#ffab40', purple: '#7c4dff', gold: '#ffd700',
-        bg: isDark ? '#141d2e' : '#ffffff',
-        bg2: isDark ? '#1a2540' : '#f4f7fd',
+        grid:     isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+        text:     isDark ? '#8892a4' : '#5a6478',
+        accent:   '#00e5ff',
+        positive: '#00e676',
+        negative: '#ff1744',
+        warning:  '#ffab40',
+        purple:   '#7c4dff',
+        gold:     '#ffd700',
+        bg:       isDark ? '#141d2e' : '#ffffff',
+        crossV:   'rgba(0,229,255,0.6)',
+        crossH:   'rgba(0,229,255,0.4)',
+        crossTxt: '#00e5ff',
     };
 }
 
-// ======= Market Switcher =======
+// ======= Market =======
 function switchMarket(market, el) {
     currentMarket = market;
     document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
@@ -150,7 +153,7 @@ function switchMarket(market, el) {
 // ======= Search =======
 function searchFromHero() {
     const heroInput = document.getElementById('symbolInputHero');
-    const navInput = document.getElementById('symbolInput');
+    const navInput  = document.getElementById('symbolInput');
     if (heroInput && heroInput.value.trim()) {
         if (navInput) navInput.value = heroInput.value.trim();
         searchStock();
@@ -161,7 +164,6 @@ async function searchStock() {
     const input = document.getElementById('symbolInput');
     const symbol = input ? input.value.trim().toUpperCase() : '';
     if (!symbol) return;
-
     showLoading(true);
     try {
         const res = await fetch(`./api/analyze/${symbol}`);
@@ -192,9 +194,7 @@ async function runRsiScan() {
         const res = await fetch(`./api/rsi-scan?market=${market}&rsi_max=${rsiMax}`);
         const data = await res.json();
         displayRsiResults(data);
-    } catch (err) {
-        showError('خطأ في مسح RSI');
-    }
+    } catch (err) { showError('خطأ في مسح RSI'); }
     showLoading(false);
 }
 
@@ -207,42 +207,41 @@ function displayRsiResults(results) {
         return;
     }
     tbody.innerHTML = results.map(stock => {
-        const isPositive = stock.change >= 0;
+        const isPos = stock.change >= 0;
         const rec = stock.recommendation || {};
-        return `
-            <tr>
-                <td><strong>${stock.symbol}</strong></td>
-                <td>${stock.name || stock.symbol}</td>
-                <td>${formatPrice(stock.price, stock.currency)}</td>
-                <td class="${isPositive ? 'positive' : 'negative'}">${isPositive ? '+' : ''}${stock.change}%</td>
-                <td><strong style="color:${stock.rsi < 30 ? '#00e676' : '#ff1744'}">${stock.rsi}</strong></td>
-                <td><span class="rec-badge ${rec.color || 'gray'}">${rec.action || 'محايد'}</span></td>
-                <td><button class="mini-btn" onclick="loadStock('${stock.symbol}')">تحليل</button></td>
-            </tr>`;
+        return `<tr>
+            <td><strong>${stock.symbol}</strong></td>
+            <td>${stock.name || stock.symbol}</td>
+            <td>${formatPrice(stock.price, stock.currency)}</td>
+            <td class="${isPos ? 'positive' : 'negative'}">${isPos ? '+' : ''}${stock.change}%</td>
+            <td><strong style="color:${stock.rsi < 30 ? '#00e676' : '#ff1744'}">${stock.rsi}</strong></td>
+            <td><span class="rec-badge ${rec.color || 'gray'}">${rec.action || 'محايد'}</span></td>
+            <td><button class="mini-btn" onclick="loadStock('${stock.symbol}')">تحليل</button></td>
+        </tr>`;
     }).join('');
     container.classList.remove('hidden');
 }
 
 // ======= Display Result =======
 function displayResult(data) {
-    const analysis = data.analysis || {};
+    const analysis   = data.analysis   || {};
     const indicators = analysis.indicators || {};
-    const rec = data.recommendation || {};
-    const bb = indicators.bollinger || {};
-    const macd = indicators.macd || {};
-    const stoch = indicators.stochastic || {};
-    const targets = analysis.targets || {};
-    const fund_reason = analysis.fundamental_reason || {};
+    const rec        = data.recommendation || {};
+    const bb         = indicators.bollinger || {};
+    const macd_ind   = indicators.macd || {};
+    const stoch      = indicators.stochastic || {};
+    const targets    = analysis.targets || {};
+    const fund_reason= analysis.fundamental_reason || {};
     const isPositive = data.change >= 0;
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
-    set('res-symbol', data.symbol);
-    set('res-name', data.name || data.symbol);
-    set('res-sector', data.sector || 'غير محدد');
-    set('res-market', data.market === 'saudi' ? '🇸🇦 سعودي' : '🇺🇸 أمريكي');
+    set('res-symbol',   data.symbol);
+    set('res-name',     data.name || data.symbol);
+    set('res-sector',   data.sector   || 'غير محدد');
+    set('res-market',   data.market === 'saudi' ? '🇸🇦 سعودي' : '🇺🇸 أمريكي');
     set('res-industry', data.industry || 'غير محدد');
-    set('res-price', formatPrice(data.current, data.currency));
+    set('res-price',    formatPrice(data.current, data.currency));
 
     const changeEl = document.getElementById('res-change');
     if (changeEl) {
@@ -250,27 +249,26 @@ function displayResult(data) {
         changeEl.className = `price-delta ${isPositive ? 'positive' : 'negative'}`;
     }
     set('res-currency', data.currency || 'USD');
-    set('res-open', formatPrice(data.open, data.currency));
-    set('res-high', formatPrice(data.high, data.currency));
-    set('res-low', formatPrice(data.low, data.currency));
-    set('res-volume', formatVolume(data.volume));
-    set('res-high52', formatPrice(data.high_52w, data.currency));
-    set('res-low52', formatPrice(data.low_52w, data.currency));
+    set('res-open',    formatPrice(data.open,     data.currency));
+    set('res-high',    formatPrice(data.high,     data.currency));
+    set('res-low',     formatPrice(data.low,      data.currency));
+    set('res-volume',  formatVolume(data.volume));
+    set('res-high52',  formatPrice(data.high_52w, data.currency));
+    set('res-low52',   formatPrice(data.low_52w,  data.currency));
 
     // Volume bar
     const avgVol = data.avg_volume || 0;
-    const todayVol = data.volume || 0;
-    const volRatio = avgVol > 0 ? (todayVol / avgVol) : 0;
+    const volRatio = avgVol > 0 ? (data.volume || 0) / avgVol : 0;
     set('volume-comparison', avgVol > 0 ? `${volRatio.toFixed(1)}x المتوسط` : '—');
     const volBar = document.getElementById('volume-bar-fill');
     if (volBar) {
         volBar.style.width = `${Math.min(volRatio * 100, 100)}%`;
         volBar.style.background = volRatio > 1.5 ? 'linear-gradient(90deg,#ff1744,#ffab40)' :
-                                   volRatio > 1 ? 'linear-gradient(90deg,#00e676,#00e5ff)' :
-                                   'linear-gradient(90deg,#8892a4,#00e5ff)';
+                                   volRatio > 1   ? 'linear-gradient(90deg,#00e676,#00e5ff)' :
+                                                    'linear-gradient(90deg,#8892a4,#00e5ff)';
     }
 
-    // AI Analysis (basic)
+    // AI
     generateAIAnalysis(data);
 
     // Earnings
@@ -298,12 +296,12 @@ function displayResult(data) {
         rsiBar.style.width = `${Math.min(rsi, 100)}%`;
         rsiBar.style.background = rsi < 30 ? '#00e676' : rsi > 70 ? '#ff1744' : '#00e5ff';
     }
-    styleSignal('sig-rsi', rsi < 30 ? 'buy' : rsi > 70 ? 'sell' : 'neutral');
-    set('sig-rsi', rsi < 30 ? 'تشبع بيعي' : rsi > 70 ? 'تشبع شرائي' : 'محايد');
+    setSignal('sig-rsi', rsi < 30 ? 'buy' : rsi > 70 ? 'sell' : 'neutral',
+              rsi < 30 ? 'تشبع بيعي' : rsi > 70 ? 'تشبع شرائي' : 'محايد');
 
     const price = data.current;
-    const sma20 = indicators.sma_20;
-    const sma50 = indicators.sma_50;
+    const sma20  = indicators.sma_20;
+    const sma50  = indicators.sma_50;
     const sma200 = indicators.sma_200;
 
     set('ind-sma20', formatPrice(sma20, data.currency));
@@ -312,8 +310,8 @@ function displayResult(data) {
     setSignal('sig-sma50', price > sma50 ? 'buy' : 'sell', price > sma50 ? 'فوق' : 'تحت');
     set('ind-sma200', formatPrice(sma200, data.currency));
     setSignal('sig-sma200', price > sma200 ? 'buy' : 'sell', price > sma200 ? 'فوق' : 'تحت');
-    set('ind-macd', macd.macd || '—');
-    setSignal('sig-macd', macd.histogram > 0 ? 'buy' : 'sell', macd.histogram > 0 ? 'صاعد' : 'هابط');
+    set('ind-macd', macd_ind.macd || '—');
+    setSignal('sig-macd', macd_ind.histogram > 0 ? 'buy' : 'sell', macd_ind.histogram > 0 ? 'صاعد' : 'هابط');
     set('ind-bb-upper', formatPrice(bb.upper, data.currency));
     set('ind-bb-lower', formatPrice(bb.lower, data.currency));
     const bbSig = price >= bb.upper ? 'sell' : price <= bb.lower ? 'buy' : 'neutral';
@@ -328,11 +326,10 @@ function displayResult(data) {
     const pe = data.pe_ratio;
     set('fund-pe', pe ? pe.toFixed(1) : 'N/A');
     if (pe) set('fund-pe-note', pe < 15 ? 'منخفض جيد' : pe > 30 ? 'مرتفع' : 'معتدل');
-    set('fund-sector', data.sector || 'غير محدد');
-    set('fund-industry', data.industry || 'غير محدد');
-    set('fund-support', formatPrice(analysis.support, data.currency));
+    set('fund-sector',     data.sector   || 'غير محدد');
+    set('fund-industry',   data.industry || 'غير محدد');
+    set('fund-support',    formatPrice(analysis.support,    data.currency));
     set('fund-resistance', formatPrice(analysis.resistance, data.currency));
-
     const trendMap = { strong_bullish:'صاعد قوي', bullish:'صاعد', neutral:'محايد', bearish:'هابط', strong_bearish:'هابط قوي' };
     set('fund-trend', trendMap[analysis.trend] || '—');
     set('fund-volume-ratio', avgVol > 0 ? `${volRatio.toFixed(1)}x` : '—');
@@ -362,14 +359,12 @@ function displayResult(data) {
     }
 
     // Signals
-    const signalsList = document.getElementById('signals-list');
-    if (signalsList) {
-        signalsList.innerHTML = analysis.signals && analysis.signals.length
-            ? analysis.signals.map(s => `<li>${s}</li>`).join('')
-            : '<li class="no-signals">لا توجد إشارات واضحة حالياً</li>';
-    }
+    const sl = document.getElementById('signals-list');
+    if (sl) sl.innerHTML = analysis.signals && analysis.signals.length
+        ? analysis.signals.map(s => `<li>${s}</li>`).join('')
+        : '<li class="no-signals">لا توجد إشارات واضحة حالياً</li>';
 
-    // Impact Analysis
+    // Impact
     displayImpactAnalysis(data);
 
     // Charts
@@ -378,22 +373,20 @@ function displayResult(data) {
     drawRsiChart(data);
     drawMacdChart(data);
 
-    // AI Deep Analysis
+    // AI Deep
     setTimeout(() => generateAIDeepAnalysis(data), 100);
 
-    // Show result
+    // Show
     const resultEl = document.getElementById('result');
     if (resultEl) {
         resultEl.classList.remove('hidden');
         resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-
-    // Hide hero
     const heroEl = document.getElementById('hero-section');
     if (heroEl) heroEl.style.display = 'none';
 }
 
-// ======= AI Basic Analysis =======
+// ======= AI Basic =======
 function generateAIAnalysis(data) {
     const container = document.getElementById('ai-analysis-content');
     if (!container) return;
@@ -401,16 +394,14 @@ function generateAIAnalysis(data) {
     const indicators = analysis.indicators || {};
     const trend = analysis.trend || 'neutral';
     const rsi = indicators.rsi || 50;
-
     let aiText = '', confidence = 50;
-    if (trend === 'strong_bullish') { aiText = 'السهم يظهر قوة شرائية ملحوظة مع وجوده فوق جميع المتوسطات الرئيسية.'; confidence = 85; }
-    else if (trend === 'bullish') { aiText = 'الاتجاه العام صاعد مع إشارات إيجابية من المؤشرات الفنية.'; confidence = 70; }
-    else if (trend === 'strong_bearish') { aiText = 'السهم في اتجاه هبوطي قوي مع ضغط بيعي واضح.'; confidence = 85; }
-    else if (trend === 'bearish') { aiText = 'الاتجاه الهبوطي مستمر مع ضعف في الزخم الشرائي.'; confidence = 65; }
-    else if (rsi < 30) { aiText = 'السهم في منطقة تشبع بيعي (RSI < 30) — احتمال ارتداد صعودي.'; confidence = 60; }
-    else if (rsi > 70) { aiText = 'السهم في منطقة تشبع شرائي (RSI > 70) — احتمال تصحيح.'; confidence = 55; }
-    else { aiText = 'السهم في منطقة محايدة — انتظار محفزات جديدة.'; confidence = 40; }
-
+    if (trend === 'strong_bullish')   { aiText = 'السهم فوق جميع المتوسطات — قوة شرائية ممتازة.'; confidence = 85; }
+    else if (trend === 'bullish')     { aiText = 'اتجاه صاعد مع إشارات إيجابية من المؤشرات.'; confidence = 70; }
+    else if (trend === 'strong_bearish') { aiText = 'هبوط قوي مع ضغط بيعي واضح على جميع الأطر.'; confidence = 85; }
+    else if (trend === 'bearish')     { aiText = 'اتجاه هبوطي مستمر — انتظار إشارات انعكاس.'; confidence = 65; }
+    else if (rsi < 30)                { aiText = `RSI عند ${rsi} — تشبع بيعي، فرصة ارتداد محتملة.`; confidence = 60; }
+    else if (rsi > 70)                { aiText = `RSI عند ${rsi} — تشبع شرائي، احتمال تصحيح.`; confidence = 55; }
+    else                              { aiText = 'السهم في منطقة محايدة — انتظار محفزات.'; confidence = 40; }
     const cc = confidence > 70 ? 'var(--positive)' : confidence > 50 ? 'var(--warning)' : 'var(--negative)';
     container.innerHTML = `
         <div class="ai-result">
@@ -427,13 +418,12 @@ function generateAIAnalysis(data) {
 // ======= Earnings =======
 function displayEarnings(data) {
     const hash = data.symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-    const daysAhead = (hash % 45) + 15;
     const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + daysAhead);
+    futureDate.setDate(futureDate.getDate() + (hash % 45) + 15);
     const months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    set('earnings-date', `${futureDate.getDate()} ${months[futureDate.getMonth()]} ${futureDate.getFullYear()}`);
-    set('earnings-quarter', ['Q1 2026','Q2 2026','Q3 2026','Q4 2026'][hash % 4]);
+    set('earnings-date',     `${futureDate.getDate()} ${months[futureDate.getMonth()]} ${futureDate.getFullYear()}`);
+    set('earnings-quarter',  ['Q1 2026','Q2 2026','Q3 2026','Q4 2026'][hash % 4]);
     set('earnings-estimate', ['أفضل من المتوقع','ضمن التوقعات','أقل من المتوقع','غير محدد'][hash % 4]);
 }
 
@@ -441,16 +431,12 @@ function displayEarnings(data) {
 function displayFibonacci(data) {
     const prices = data.prices_arr || [];
     if (!prices.length) return;
-    const closes = prices.map(p => p.close || 0);
-    const high52 = data.high_52w || Math.max(...closes);
-    const low52 = data.low_52w || Math.min(...closes);
-    const range = high52 - low52;
-    const levels = {
-        'fib-0': high52, 'fib-236': high52 - range * 0.236,
-        'fib-382': high52 - range * 0.382, 'fib-500': high52 - range * 0.5,
-        'fib-618': high52 - range * 0.618, 'fib-786': high52 - range * 0.786,
-        'fib-100': low52
-    };
+    const high52 = data.high_52w || Math.max(...prices.map(p => p.high || 0));
+    const low52  = data.low_52w  || Math.min(...prices.map(p => p.low  || 999));
+    const range  = high52 - low52;
+    const levels = { 'fib-0': high52, 'fib-236': high52 - range*0.236, 'fib-382': high52 - range*0.382,
+                     'fib-500': high52 - range*0.5, 'fib-618': high52 - range*0.618,
+                     'fib-786': high52 - range*0.786, 'fib-100': low52 };
     Object.entries(levels).forEach(([id, val]) => {
         const el = document.getElementById(id);
         if (el) el.textContent = formatPrice(val, data.currency);
@@ -459,321 +445,306 @@ function displayFibonacci(data) {
 
 // ======= Impact Analysis =======
 function displayImpactAnalysis(data) {
-    const symbol = data.symbol;
-    const market = data.market;
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-
-    set('impact-sector', data.sector || 'غير محدد');
+    set('impact-sector',   data.sector   || 'غير محدد');
     set('impact-industry', data.industry || 'غير محدد');
-    set('impact-country', market === 'saudi' ? 'السعودية' : 'الولايات المتحدة');
-
-    const hash = symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+    set('impact-country',  data.market === 'saudi' ? 'السعودية' : 'الولايات المتحدة');
+    const hash = data.symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
     set('impact-employees', formatVolume(((hash % 500) + 1) * 1000));
-
     const revenue = ((hash % 100) + 10) * 1e9;
-    const profit = revenue * ((hash % 30) + 5) / 100;
     set('impact-revenue', formatMarketCap(revenue));
-    set('impact-profit', formatMarketCap(profit));
-    set('impact-margin', `${(hash % 25) + 10}%`);
-    set('impact-roe', `${(hash % 20) + 5}%`);
+    set('impact-profit',  formatMarketCap(revenue * ((hash % 30) + 5) / 100));
+    set('impact-margin',  `${(hash % 25) + 10}%`);
+    set('impact-roe',     `${(hash % 20) + 5}%`);
 
-    const factorsContainer = document.getElementById('impact-factors');
-    if (factorsContainer) {
+    const fc = document.getElementById('impact-factors');
+    if (fc) {
         const factors = generateImpactFactors(data, hash);
-        factorsContainer.innerHTML = factors.map(f => `
+        fc.innerHTML = factors.map(f => `
             <div class="impact-factor ${f.type}">
                 <span class="impact-factor-icon">${f.icon}</span>
                 <span class="impact-factor-text">${f.text}</span>
             </div>`).join('');
     }
-
-    const outlookContainer = document.getElementById('impact-outlook');
-    if (outlookContainer) {
-        outlookContainer.innerHTML = `<p>${generateOutlook(data, hash)}</p>`;
-    }
+    const oc = document.getElementById('impact-outlook');
+    if (oc) oc.innerHTML = `<p>${generateOutlook(data, hash)}</p>`;
 }
 
 function generateImpactFactors(data, hash) {
     const factors = [];
     const isSaudi = data.market === 'saudi';
-
-    if (data.change > 5) factors.push({ icon:'📈', text:`ارتفاع قوي بنسبة ${data.change}% يعكس تفاؤل السوق`, type:'positive' });
-    else if (data.change < -5) factors.push({ icon:'📉', text:`انخفاض حاد بنسبة ${Math.abs(data.change)}% قد يعكس أخبار سلبية`, type:'negative' });
-
-    const volRatio = (data.volume || 0) / (data.avg_volume || 1);
-    if (volRatio > 2) factors.push({ icon:'🔥', text:`حجم تداول استثنائي (${volRatio.toFixed(1)}x المتوسط)`, type:'positive' });
-
+    if (data.change > 5)       factors.push({ icon:'📈', text:`ارتفاع قوي ${data.change}% يعكس تفاؤل السوق`,            type:'positive' });
+    else if (data.change < -5) factors.push({ icon:'📉', text:`انخفاض حاد ${Math.abs(data.change)}% ضغط بيعي واضح`,     type:'negative' });
+    const vr = (data.volume || 0) / (data.avg_volume || 1);
+    if (vr > 2) factors.push({ icon:'🔥', text:`حجم تداول استثنائي (${vr.toFixed(1)}x المتوسط)`, type:'positive' });
     factors.push(isSaudi
-        ? { icon:'🏛️', text:'تأثير إيجابي من رؤية 2030 والتحول الاقتصادي', type:'positive' }
-        : { icon:'💵', text:'تأثر بالسياسة النقدية الفيدرالية وتوقعات الفائدة', type:'neutral' });
-
+        ? { icon:'🏛️', text:'تأثير إيجابي من رؤية 2030 والتحول الاقتصادي',        type:'positive' }
+        : { icon:'💵', text:'تأثر بالسياسة النقدية الفيدرالية وتوقعات الفائدة', type:'neutral'  });
     const trend = data.analysis?.trend || 'neutral';
-    if (trend.includes('bullish')) factors.push({ icon:'🎯', text:'الاتجاه الفني الصعودي يجذب المتداولين ويخلق زخماً إيجابياً', type:'positive' });
-    else if (trend.includes('bearish')) factors.push({ icon:'⚠️', text:'الاتجاه الهبوطي قد يؤدي لمزيد من الضغط البيعي', type:'negative' });
-
+    if (trend.includes('bullish')) factors.push({ icon:'🎯', text:'الاتجاه الصعودي يجذب المتداولين',     type:'positive' });
+    else if (trend.includes('bearish')) factors.push({ icon:'⚠️', text:'الاتجاه الهبوطي يضغط على المراكز', type:'negative' });
     return factors;
 }
 
 function generateOutlook(data, hash) {
-    const trend = data.analysis?.trend || 'neutral';
     const outlooks = {
-        strong_bullish: 'التوقعات المستقبلية إيجابية جداً. المؤشرات الفنية تدعم استمرار الصعود مع احتمال كسر مستويات مقاومة جديدة.',
-        bullish: 'التوقعات إيجابية بشكل عام مع احتمال تحقيق أهداف سعرية أعلى على المدى المتوسط.',
-        neutral: 'التوقعات متباينة. السهم يحتاج محفزات جديدة لكسر نطاق التداول الحالي.',
-        bearish: 'التوقعات سلبية على المدى القصير. ينصح بمراقبة مستويات الدعم الرئيسية.',
-        strong_bearish: 'التوقعات سلبية بشكل واضح. الضغط البيعي قد يستمر لفترة أطول.'
+        strong_bullish: 'التوقعات إيجابية جداً — المؤشرات تدعم استمرار الصعود.',
+        bullish:        'التوقعات إيجابية — احتمال تحقيق أهداف أعلى على المدى المتوسط.',
+        neutral:        'التوقعات متباينة — السهم يحتاج محفزات لكسر نطاق التداول.',
+        bearish:        'التوقعات سلبية على المدى القصير — راقب مستويات الدعم.',
+        strong_bearish: 'التوقعات سلبية — الضغط البيعي قد يستمر.'
     };
-    return outlooks[trend] || outlooks.neutral;
+    return outlooks[data.analysis?.trend] || outlooks.neutral;
 }
 
-// ======= Candlestick Chart =======
-function drawCandlestickChart(data, highlightIndex = -1) {
-    let canvas = document.getElementById('candlestickChart');
+// ======= Candlestick Chart - مع خط أفقي وعمودي =======
+function drawCandlestickChart(data, highlightIndex = -1, crsX = -1, crsY = -1) {
+    const canvas = document.getElementById('candlestickChart');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const c = getChartColors();
 
     const container = document.getElementById('mainChartWrapper');
     if (container) {
-        canvas.width = container.clientWidth;
+        canvas.width  = container.clientWidth;
         canvas.height = container.clientHeight || 450;
     }
 
-    const width = canvas.width;
+    const width  = canvas.width;
     const height = canvas.height;
-    const padding = { top: 20, right: 60, bottom: 40, left: 10 };
-    const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
+    const padding = { top: 20, right: 65, bottom: 40, left: 10 };
+    const chartWidth  = width  - padding.left - padding.right;
+    const chartHeight = height - padding.top  - padding.bottom;
 
     const prices = data.prices_arr || [];
-    const dates = data.dates_list || [];
+    const dates  = data.dates_list || [];
     if (!prices.length) return;
 
-    // Calculate SMAs
-    const closes = prices.map(p => p.close || p.Close || 0);
+    // SMAs
+    const closes = prices.map(p => p.close || 0);
     function calcSMA(arr, period) {
-        return arr.map((_, i) => i < period - 1 ? null : arr.slice(i - period + 1, i + 1).reduce((a,b) => a+b, 0) / period);
+        return arr.map((_, i) => i < period - 1 ? null :
+            arr.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period);
     }
-    const sma7 = calcSMA(closes, 7);
-    const sma20 = calcSMA(closes, 20);
-    const sma50 = calcSMA(closes, 50);
+    const sma7   = calcSMA(closes, 7);
+    const sma20  = calcSMA(closes, 20);
+    const sma50  = calcSMA(closes, 50);
     const sma200 = calcSMA(closes, 200);
 
-    // Bollinger Bands
+    // Bollinger
     const bollingerUpper = closes.map((_, i) => {
         if (i < 19) return null;
-        const slice = closes.slice(i - 19, i + 1);
-        const mean = slice.reduce((a,b) => a+b, 0) / 20;
-        const std = Math.sqrt(slice.reduce((a,b) => a + Math.pow(b - mean, 2), 0) / 20);
-        return mean + std * 2;
+        const sl = closes.slice(i - 19, i + 1);
+        const m = sl.reduce((a,b) => a+b,0) / 20;
+        return m + Math.sqrt(sl.reduce((a,b) => a + Math.pow(b-m,2),0) / 20) * 2;
     });
     const bollingerLower = closes.map((_, i) => {
         if (i < 19) return null;
-        const slice = closes.slice(i - 19, i + 1);
-        const mean = slice.reduce((a,b) => a+b, 0) / 20;
-        const std = Math.sqrt(slice.reduce((a,b) => a + Math.pow(b - mean, 2), 0) / 20);
-        return mean - std * 2;
+        const sl = closes.slice(i - 19, i + 1);
+        const m = sl.reduce((a,b) => a+b,0) / 20;
+        return m - Math.sqrt(sl.reduce((a,b) => a + Math.pow(b-m,2),0) / 20) * 2;
     });
 
-    // Fibonacci levels
-    const high52 = data.high_52w || Math.max(...prices.map(p => p.high || 0));
-    const low52 = data.low_52w || Math.min(...prices.map(p => p.low || 0));
+    // Fibonacci
+    const high52  = data.high_52w || Math.max(...prices.map(p => p.high || 0));
+    const low52   = data.low_52w  || Math.min(...prices.map(p => p.low  || 999999));
     const range52 = high52 - low52;
     const fibLevels = [
-        high52 - range52 * 0.236, high52 - range52 * 0.382,
-        high52 - range52 * 0.5, high52 - range52 * 0.618,
-        high52 - range52 * 0.786
+        high52 - range52*0.236, high52 - range52*0.382,
+        high52 - range52*0.5,   high52 - range52*0.618,
+        high52 - range52*0.786
     ];
 
-    // Min/Max for scaling
-    let allValues = [];
-    prices.forEach(p => { allValues.push(p.high || 0); allValues.push(p.low || 0); });
-    if (indicatorVisibility.bollinger) {
-        bollingerUpper.forEach(v => { if (v) allValues.push(v); });
-        bollingerLower.forEach(v => { if (v) allValues.push(v); });
-    }
-    if (indicatorVisibility.fibonacci) fibLevels.forEach(v => allValues.push(v));
+    // Min/Max
+    let allV = [];
+    prices.forEach(p => { allV.push(p.high || 0); allV.push(p.low || 0); });
+    if (indicatorVisibility.bollinger) { bollingerUpper.forEach(v => { if (v) allV.push(v); }); bollingerLower.forEach(v => { if (v) allV.push(v); }); }
+    if (indicatorVisibility.fibonacci) fibLevels.forEach(v => allV.push(v));
+    const minPrice  = Math.min(...allV.filter(v => v > 0)) * 0.98;
+    const maxPrice  = Math.max(...allV) * 1.02;
+    const priceRange = maxPrice - minPrice || 1;
 
-    const minPrice = Math.min(...allValues.filter(v => v > 0)) * 0.98;
-    const maxPrice = Math.max(...allValues) * 1.02;
-    const priceRange = maxPrice - minPrice;
+    const toY = val => padding.top + ((maxPrice - val) / priceRange) * chartHeight;
+    const candleSpacing = chartWidth / prices.length;
+    const candleWidth   = Math.max(1, candleSpacing * 0.7);
 
     // Clear
     ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = c.bg;
+    ctx.fillRect(0, 0, width, height);
 
-    // Grid
+    // Grid + price labels
     ctx.strokeStyle = c.grid;
     ctx.lineWidth = 1;
     for (let i = 0; i <= 5; i++) {
         const y = padding.top + (chartHeight / 5) * i;
-        ctx.beginPath();
-        ctx.moveTo(padding.left, y);
-        ctx.lineTo(width - padding.right, y);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width - padding.right, y); ctx.stroke();
         const p = maxPrice - (priceRange / 5) * i;
         ctx.fillStyle = c.text;
         ctx.font = '10px Cairo';
         ctx.textAlign = 'left';
-        ctx.fillText(p.toFixed(2), width - padding.right + 5, y + 3);
+        ctx.fillText(p.toFixed(2), width - padding.right + 5, y + 4);
     }
 
     // Date labels
     const dateStep = Math.max(1, Math.floor(dates.length / 8));
     for (let i = 0; i < dates.length; i += dateStep) {
-        const x = padding.left + (i / (prices.length - 1)) * chartWidth;
+        const x = padding.left + i * candleSpacing + candleSpacing / 2;
         ctx.fillStyle = c.text;
         ctx.font = '9px Cairo';
         ctx.textAlign = 'center';
-        ctx.fillText(dates[i] ? dates[i].slice(5) : '', x, height - 10);
+        ctx.fillText(dates[i] ? dates[i].slice(5) : '', x, height - 8);
     }
 
-    const candleWidth = Math.max(1, (chartWidth / prices.length) * 0.7);
-    const candleSpacing = chartWidth / prices.length;
-
-    // Fibonacci
+    // Fibonacci lines
     if (indicatorVisibility.fibonacci) {
         const fibColors = ['rgba(255,215,0,0.3)','rgba(255,215,0,0.25)','rgba(255,215,0,0.2)','rgba(255,215,0,0.25)','rgba(255,215,0,0.3)'];
         const fibLabels = ['23.6%','38.2%','50%','61.8%','78.6%'];
         fibLevels.forEach((level, idx) => {
-            const y = padding.top + ((maxPrice - level) / priceRange) * chartHeight;
-            ctx.strokeStyle = fibColors[idx];
-            ctx.lineWidth = 1;
-            ctx.setLineDash([4, 4]);
-            ctx.beginPath();
-            ctx.moveTo(padding.left, y);
-            ctx.lineTo(width - padding.right, y);
-            ctx.stroke();
+            const y = toY(level);
+            ctx.strokeStyle = fibColors[idx]; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+            ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width - padding.right, y); ctx.stroke();
             ctx.setLineDash([]);
-            ctx.fillStyle = c.gold;
-            ctx.font = '9px Cairo';
-            ctx.textAlign = 'left';
+            ctx.fillStyle = c.gold; ctx.font = '9px Cairo'; ctx.textAlign = 'left';
             ctx.fillText(fibLabels[idx], padding.left + 5, y - 3);
         });
     }
 
-    // Bollinger
+    // Bollinger Bands
     if (indicatorVisibility.bollinger) {
-        ctx.strokeStyle = 'rgba(124,77,255,0.3)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ['Upper','Lower'].forEach((band, bi) => {
-            const bandData = bi === 0 ? bollingerUpper : bollingerLower;
+        [bollingerUpper, bollingerLower].forEach(band => {
+            ctx.strokeStyle = 'rgba(124,77,255,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
             ctx.beginPath();
             let started = false;
-            bandData.forEach((v, i) => {
+            band.forEach((v, i) => {
                 if (v === null) return;
                 const x = padding.left + i * candleSpacing + candleSpacing / 2;
-                const y = padding.top + ((maxPrice - v) / priceRange) * chartHeight;
+                const y = toY(v);
                 if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
             });
-            ctx.stroke();
+            ctx.stroke(); ctx.setLineDash([]);
         });
-        ctx.setLineDash([]);
+    }
+
+    // Highlight column
+    if (highlightIndex >= 0) {
+        ctx.fillStyle = 'rgba(0,229,255,0.06)';
+        ctx.fillRect(padding.left + highlightIndex * candleSpacing, padding.top, candleSpacing, chartHeight);
     }
 
     // Candles
     prices.forEach((p, i) => {
-        const open = p.open || p.Open || p.close || 0;
-        const high = p.high || p.High || 0;
-        const low = p.low || p.Low || 0;
-        const close = p.close || p.Close || 0;
-
-        const x = padding.left + i * candleSpacing + candleSpacing / 2;
-        const yOpen = padding.top + ((maxPrice - open) / priceRange) * chartHeight;
-        const yHigh = padding.top + ((maxPrice - high) / priceRange) * chartHeight;
-        const yLow = padding.top + ((maxPrice - low) / priceRange) * chartHeight;
-        const yClose = padding.top + ((maxPrice - close) / priceRange) * chartHeight;
+        const open  = p.open  || 0;
+        const high  = p.high  || 0;
+        const low   = p.low   || 0;
+        const close = p.close || 0;
+        const x     = padding.left + i * candleSpacing + candleSpacing / 2;
         const isGreen = close >= open;
-        const color = isGreen ? c.positive : c.negative;
+        const color   = isGreen ? c.positive : c.negative;
 
-        if (i === highlightIndex) {
-            ctx.fillStyle = 'rgba(0,229,255,0.1)';
-            ctx.fillRect(x - candleSpacing / 2, padding.top, candleSpacing, chartHeight);
-        }
+        // Wick
+        ctx.strokeStyle = color; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, toY(high)); ctx.lineTo(x, toY(low)); ctx.stroke();
 
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, yHigh);
-        ctx.lineTo(x, yLow);
-        ctx.stroke();
-
-        const bodyTop = Math.min(yOpen, yClose);
-        const bodyH = Math.max(1, Math.abs(yClose - yOpen));
-        const bodyW = Math.max(1, candleWidth);
-
+        // Body
+        const bodyTop = Math.min(toY(open), toY(close));
+        const bodyH   = Math.max(1, Math.abs(toY(close) - toY(open)));
+        const bodyW   = Math.max(1, candleWidth);
         if (isGreen) {
-            ctx.fillStyle = 'rgba(0,230,118,0.3)';
-            ctx.fillRect(x - bodyW / 2, bodyTop, bodyW, bodyH);
-            ctx.strokeRect(x - bodyW / 2, bodyTop, bodyW, bodyH);
+            ctx.fillStyle = 'rgba(0,230,118,0.25)';
+            ctx.fillRect(x - bodyW/2, bodyTop, bodyW, bodyH);
+            ctx.strokeRect(x - bodyW/2, bodyTop, bodyW, bodyH);
         } else {
             ctx.fillStyle = color;
-            ctx.fillRect(x - bodyW / 2, bodyTop, bodyW, bodyH);
+            ctx.fillRect(x - bodyW/2, bodyTop, bodyW, bodyH);
         }
     });
 
     // SMA Lines
-    function drawSMALine(smaData, color, lineWidth, dash) {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = lineWidth;
+    function drawSMA(smaData, color, lw, dash) {
+        ctx.strokeStyle = color; ctx.lineWidth = lw;
         ctx.setLineDash(dash || []);
         ctx.beginPath();
         let started = false;
         smaData.forEach((v, i) => {
             if (v === null || v === undefined) return;
             const x = padding.left + i * candleSpacing + candleSpacing / 2;
-            const y = padding.top + ((maxPrice - v) / priceRange) * chartHeight;
+            const y = toY(v);
             if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
         });
-        ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.stroke(); ctx.setLineDash([]);
     }
+    if (indicatorVisibility.sma7)   drawSMA(sma7,   c.warning,  1.5, [2,2]);
+    if (indicatorVisibility.sma20)  drawSMA(sma20,  c.purple,   1.5, [4,2]);
+    if (indicatorVisibility.sma50)  drawSMA(sma50,  c.negative, 1.5, [6,3]);
+    if (indicatorVisibility.sma200) drawSMA(sma200, c.positive, 2,   []);
 
-    if (indicatorVisibility.sma7) drawSMALine(sma7, c.warning, 1.5, [2, 2]);
-    if (indicatorVisibility.sma20) drawSMALine(sma20, c.purple, 1.5, [4, 2]);
-    if (indicatorVisibility.sma50) drawSMALine(sma50, c.negative, 1.5, [6, 3]);
-    if (indicatorVisibility.sma200) drawSMALine(sma200, c.positive, 2, []);
-
-    // Targets
+    // Target lines
     const targets = data.analysis?.targets || {};
     if (indicatorVisibility.targets) {
         if (targets.target_1) {
-            const y = padding.top + ((maxPrice - targets.target_1) / priceRange) * chartHeight;
-            ctx.strokeStyle = 'rgba(0,230,118,0.4)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([3, 3]);
+            const y = toY(targets.target_1);
+            ctx.strokeStyle = 'rgba(0,230,118,0.45)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
             ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width - padding.right, y); ctx.stroke();
             ctx.setLineDash([]);
-            ctx.fillStyle = c.positive;
-            ctx.font = '9px Cairo';
-            ctx.textAlign = 'right';
-            ctx.fillText('هدف 1', width - padding.right - 5, y - 3);
+            ctx.fillStyle = c.positive; ctx.font = 'bold 9px Cairo'; ctx.textAlign = 'right';
+            ctx.fillText('هدف 1', width - padding.right - 3, y - 3);
         }
         if (targets.stop_loss) {
-            const y = padding.top + ((maxPrice - targets.stop_loss) / priceRange) * chartHeight;
-            ctx.strokeStyle = 'rgba(255,23,68,0.4)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([3, 3]);
+            const y = toY(targets.stop_loss);
+            ctx.strokeStyle = 'rgba(255,23,68,0.45)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
             ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width - padding.right, y); ctx.stroke();
             ctx.setLineDash([]);
-            ctx.fillStyle = c.negative;
-            ctx.font = '9px Cairo';
-            ctx.textAlign = 'right';
-            ctx.fillText('وقف الخسارة', width - padding.right - 5, y - 3);
+            ctx.fillStyle = c.negative; ctx.font = 'bold 9px Cairo'; ctx.textAlign = 'right';
+            ctx.fillText('وقف الخسارة', width - padding.right - 3, y - 3);
         }
     }
 
-    // Crosshair
-    if (isMouseOverChart && highlightIndex >= 0) {
-        const x = padding.left + highlightIndex * candleSpacing + candleSpacing / 2;
-        ctx.strokeStyle = 'rgba(0,229,255,0.5)';
+    // ======= CROSSHAIR - خط عمودي + أفقي =======
+    if (highlightIndex >= 0 && crsX >= 0 && crsY >= 0) {
+        const candleX = padding.left + highlightIndex * candleSpacing + candleSpacing / 2;
+        const p = prices[highlightIndex];
+        const priceAtCursor = p ? (p.close || 0) : minPrice + (maxPrice - minPrice) * (1 - (crsY - padding.top) / chartHeight);
+
+        // خط عمودي
+        ctx.strokeStyle = c.crossV;
         ctx.lineWidth = 1;
-        ctx.setLineDash([2, 2]);
+        ctx.setLineDash([4, 4]);
         ctx.beginPath();
-        ctx.moveTo(x, padding.top);
-        ctx.lineTo(x, height - padding.bottom);
+        ctx.moveTo(candleX, padding.top);
+        ctx.lineTo(candleX, height - padding.bottom);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        // خط أفقي
+        ctx.strokeStyle = c.crossH;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padding.left, crsY);
+        ctx.lineTo(width - padding.right, crsY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // label السعر على اليمين
+        const priceY = crsY;
+        const priceVal = maxPrice - (crsY - padding.top) / chartHeight * priceRange;
+        ctx.fillStyle = c.crossV;
+        ctx.fillRect(width - padding.right + 2, priceY - 10, 60, 18);
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 10px JetBrains Mono, monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(priceVal.toFixed(2), width - padding.right + 5, priceY + 4);
+
+        // label التاريخ في الأسفل
+        const dateLabel = dates[highlightIndex] ? dates[highlightIndex] : '';
+        ctx.fillStyle = c.crossV;
+        const textW = ctx.measureText(dateLabel).width + 10;
+        ctx.fillRect(candleX - textW / 2, height - padding.bottom + 2, textW, 16);
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 9px Cairo';
+        ctx.textAlign = 'center';
+        ctx.fillText(dateLabel, candleX, height - padding.bottom + 13);
     }
 }
 
@@ -783,50 +754,49 @@ function drawVolumeChart(data) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const c = getChartColors();
-    const prices = data.prices_arr || [];
+    const prices  = data.prices_arr  || [];
     const volumes = data.volumes_list || prices.map(p => p.volume || 0);
     if (!volumes.length) return;
 
     const container = canvas.parentElement;
-    canvas.width = container.clientWidth;
+    canvas.width  = container.clientWidth;
     canvas.height = container.clientHeight;
 
     const width = canvas.width, height = canvas.height;
-    const padding = { top: 10, right: 60, bottom: 20, left: 10 };
-    const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
+    const padding = { top: 10, right: 65, bottom: 20, left: 10 };
+    const chartWidth  = width  - padding.left - padding.right;
+    const chartHeight = height - padding.top  - padding.bottom;
     const maxVol = Math.max(...volumes.filter(v => v > 0)) * 1.1;
 
     ctx.clearRect(0, 0, width, height);
-    ctx.strokeStyle = c.grid;
-    ctx.lineWidth = 1;
+    ctx.fillStyle = c.bg;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = c.grid; ctx.lineWidth = 1;
     for (let i = 0; i <= 3; i++) {
         const y = padding.top + (chartHeight / 3) * i;
         ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width - padding.right, y); ctx.stroke();
-        ctx.fillStyle = c.text;
-        ctx.font = '9px Cairo';
-        ctx.textAlign = 'left';
+        ctx.fillStyle = c.text; ctx.font = '9px Cairo'; ctx.textAlign = 'left';
         ctx.fillText(formatVolumeCompact(maxVol - (maxVol / 3) * i), width - padding.right + 5, y + 3);
     }
 
-    const barWidth = Math.max(1, (chartWidth / volumes.length) * 0.8);
-    const barSpacing = chartWidth / volumes.length;
+    const barW = Math.max(1, (chartWidth / volumes.length) * 0.8);
+    const barS = chartWidth / volumes.length;
     volumes.forEach((v, i) => {
         const p = prices[i] || {};
         const close = p.close || p.Close || 0;
-        const open = p.open || p.Open || close;
-        const x = padding.left + i * barSpacing + barSpacing / 2;
-        const barH = (v / maxVol) * chartHeight;
-        const y = padding.top + chartHeight - barH;
+        const open  = p.open  || p.Open  || close;
+        const x = padding.left + i * barS + barS / 2;
+        const bh = (v / maxVol) * chartHeight;
         ctx.fillStyle = close >= open ? 'rgba(0,230,118,0.5)' : 'rgba(255,23,68,0.5)';
-        ctx.fillRect(x - barWidth / 2, y, barWidth, barH);
+        ctx.fillRect(x - barW/2, padding.top + chartHeight - bh, barW, bh);
     });
 }
 
 function formatVolumeCompact(vol) {
-    if (vol >= 1e9) return `${(vol / 1e9).toFixed(1)}B`;
-    if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)}M`;
-    if (vol >= 1e3) return `${(vol / 1e3).toFixed(0)}K`;
+    if (vol >= 1e9) return `${(vol/1e9).toFixed(1)}B`;
+    if (vol >= 1e6) return `${(vol/1e6).toFixed(1)}M`;
+    if (vol >= 1e3) return `${(vol/1e3).toFixed(0)}K`;
     return vol.toString();
 }
 
@@ -835,34 +805,20 @@ function drawRsiChart(data) {
     if (!secondaryChartVisibility.rsi) return;
     const canvas = document.getElementById('rsiChart');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
     const c = getChartColors();
     const rsiList = data.rsi_list || [];
-    const dates = data.dates_list || [];
+    const dates   = data.dates_list || [];
     if (!rsiList.length) return;
     if (rsiChart) rsiChart.destroy();
 
-    rsiChart = new Chart(ctx, {
+    rsiChart = new Chart(canvas.getContext('2d'), {
         type: 'line',
-        data: {
-            labels: dates,
-            datasets: [{
-                label: 'RSI', data: rsiList,
-                borderColor: '#7c4dff', backgroundColor: 'rgba(124,77,255,0.08)',
-                borderWidth: 2, fill: true, tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
-            }]
-        },
+        data: { labels: dates, datasets: [{ label:'RSI', data: rsiList, borderColor:'#7c4dff', backgroundColor:'rgba(124,77,255,0.08)', borderWidth:2, fill:true, tension:0.3, pointRadius:0, pointHoverRadius:4 }] },
         options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            plugins: {
-                legend: { display: false },
-                tooltip: { backgroundColor: 'rgba(20,29,46,0.95)', titleColor: c.text, bodyColor: c.text, borderColor: '#7c4dff', borderWidth: 1, padding: 10, rtl: true }
-            },
-            scales: {
-                x: { display: false },
-                y: { min: 0, max: 100, grid: { color: c.grid }, ticks: { color: c.text, font: { size: 10 } } }
-            }
+            responsive:true, maintainAspectRatio:false,
+            interaction:{ intersect:false, mode:'index' },
+            plugins:{ legend:{ display:false }, tooltip:{ backgroundColor:'rgba(20,29,46,0.95)', titleColor:c.text, bodyColor:c.text, borderColor:'#7c4dff', borderWidth:1, padding:10, rtl:true } },
+            scales:{ x:{ display:false }, y:{ min:0, max:100, grid:{ color:c.grid }, ticks:{ color:c.text, font:{ size:10 } } } }
         }
     });
 }
@@ -872,41 +828,34 @@ function drawMacdChart(data) {
     if (!secondaryChartVisibility.macd) return;
     const canvas = document.getElementById('macdChart');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
     const c = getChartColors();
-    const macdList = data.macd_list || [];
-    const signalList = data.signal_list || [];
-    const histList = data.histogram_list || [];
-    const dates = data.dates_list || [];
+    const macdList   = data.macd_list      || [];
+    const signalList = data.signal_list    || [];
+    const histList   = data.histogram_list || [];
+    const dates      = data.dates_list     || [];
     if (!macdList.length) return;
     if (macdChart) macdChart.destroy();
 
-    macdChart = new Chart(ctx, {
+    macdChart = new Chart(canvas.getContext('2d'), {
         type: 'bar',
         data: {
             labels: dates,
             datasets: [
-                { label: 'Histogram', data: histList, backgroundColor: histList.map(v => v >= 0 ? 'rgba(0,230,118,0.6)' : 'rgba(255,23,68,0.6)'), type: 'bar', order: 2 },
-                { label: 'MACD', data: macdList, borderColor: c.accent, borderWidth: 1.5, fill: false, tension: 0.3, pointRadius: 0, type: 'line', order: 1 },
-                { label: 'Signal', data: signalList, borderColor: c.warning, borderWidth: 1.5, fill: false, tension: 0.3, pointRadius: 0, type: 'line', order: 0 }
+                { label:'Histogram', data:histList, backgroundColor:histList.map(v => v >= 0 ? 'rgba(0,230,118,0.6)' : 'rgba(255,23,68,0.6)'), type:'bar', order:2 },
+                { label:'MACD',   data:macdList,   borderColor:c.accent,  borderWidth:1.5, fill:false, tension:0.3, pointRadius:0, type:'line', order:1 },
+                { label:'Signal', data:signalList, borderColor:c.warning, borderWidth:1.5, fill:false, tension:0.3, pointRadius:0, type:'line', order:0 }
             ]
         },
         options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            plugins: {
-                legend: { labels: { color: c.text, font: { family: 'Cairo', size: 11 }, boxWidth: 16 } },
-                tooltip: { backgroundColor: 'rgba(20,29,46,0.95)', titleColor: c.text, bodyColor: c.text, borderColor: c.accent, borderWidth: 1, padding: 10, rtl: true }
-            },
-            scales: {
-                x: { display: false },
-                y: { grid: { color: c.grid }, ticks: { color: c.text, font: { size: 10 } } }
-            }
+            responsive:true, maintainAspectRatio:false,
+            interaction:{ intersect:false, mode:'index' },
+            plugins:{ legend:{ labels:{ color:c.text, font:{ family:'Cairo', size:11 }, boxWidth:16 } }, tooltip:{ backgroundColor:'rgba(20,29,46,0.95)', titleColor:c.text, bodyColor:c.text, borderColor:c.accent, borderWidth:1, padding:10, rtl:true } },
+            scales:{ x:{ display:false }, y:{ grid:{ color:c.grid }, ticks:{ color:c.text, font:{ size:10 } } } }
         }
     });
 }
 
-// ======= Toggle Indicators =======
+// ======= Toggle =======
 function toggleIndicator(indicator) {
     indicatorVisibility[indicator] = !indicatorVisibility[indicator];
     if (currentData) drawCandlestickChart(currentData);
@@ -917,7 +866,7 @@ function toggleSecondaryChart(chart) {
     const canvas = document.getElementById(chart + 'Chart');
     if (canvas) canvas.style.display = secondaryChartVisibility[chart] ? 'block' : 'none';
     if (currentData && secondaryChartVisibility[chart]) {
-        if (chart === 'rsi') drawRsiChart(currentData);
+        if (chart === 'rsi')  drawRsiChart(currentData);
         if (chart === 'macd') drawMacdChart(currentData);
     }
 }
@@ -926,15 +875,18 @@ function redrawCharts(data) {
     if (!data) return;
     drawCandlestickChart(data);
     drawVolumeChart(data);
-    if (secondaryChartVisibility.rsi) drawRsiChart(data);
+    if (secondaryChartVisibility.rsi)  drawRsiChart(data);
     if (secondaryChartVisibility.macd) drawMacdChart(data);
 }
 
+// ======= Chart Period =======
 function updateChartPeriod(period, btn) {
+    currentPeriod = period;
     document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
     if (!currentSymbol) return;
-    fetch(`./api/chart-data/${currentSymbol}?period=${period}`)
+
+    fetch(`./api/chart-data/${currentSymbol}?period=${period}&interval=${currentTimeframe}`)
         .then(r => r.json())
         .then(d => {
             if (d && !d.error) {
@@ -942,7 +894,7 @@ function updateChartPeriod(period, btn) {
                 redrawCharts(currentData);
             }
         })
-        .catch(err => console.error('Chart data error:', err));
+        .catch(err => console.error('Chart period error:', err));
 }
 
 // ======= Timeframe Switch =======
@@ -950,32 +902,38 @@ function switchTimeframe(tf, btn) {
     currentTimeframe = tf;
     document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
-    if (!currentSymbol || !currentData) return;
+    if (!currentSymbol) return;
 
-    const tfToPeriod = { '1m':'1mo', '5m':'1mo', '15m':'3mo', '1h':'3mo', '4h':'6mo', '1d':'1y', '1w':'1y' };
-    const tfToInterval = { '1m':'1m', '5m':'5m', '15m':'15m', '1h':'1h', '4h':'4h', '1d':'1d', '1w':'1wk' };
-    const period = tfToPeriod[tf] || '1mo';
-    const interval = tfToInterval[tf] || '1d';
+    const tfToPeriod = {
+        '1m':'1d', '5m':'5d', '15m':'1mo',
+        '1h':'3mo', '4h':'6mo', '1d':'1y', '1w':'1y'
+    };
+    const period = tfToPeriod[tf] || currentPeriod;
 
-    fetch(`./api/chart-data/${currentSymbol}?period=${period}&interval=${interval}`)
+    showLoading(true);
+    fetch(`./api/chart-data/${currentSymbol}?period=${period}&interval=${tf === '1w' ? '1wk' : tf}`)
         .then(r => r.json())
         .then(d => {
             if (d && !d.error) {
                 currentData = { ...currentData, ...d };
                 redrawCharts(currentData);
+                showToast(`تم تحديث الرسم: ${btn ? btn.textContent : tf}`);
+            } else {
+                showToast('لم تتوفر بيانات لهذا الإطار الزمني', true);
             }
         })
-        .catch(() => { if (currentData) redrawCharts(currentData); });
+        .catch(() => showToast('خطأ في تحميل البيانات', true))
+        .finally(() => showLoading(false));
 }
 
 // ======= Watchlist =======
-function getWatchlist() { return JSON.parse(localStorage.getItem('watchlist') || '[]'); }
-function saveWatchlist(list) { localStorage.setItem('watchlist', JSON.stringify(list)); }
+function getWatchlist()           { return JSON.parse(localStorage.getItem('watchlist') || '[]'); }
+function saveWatchlist(list)      { localStorage.setItem('watchlist', JSON.stringify(list)); }
 
 function addToWatchlist() {
     if (!currentSymbol) return;
     let list = getWatchlist();
-    if (list.includes(currentSymbol)) { showToast('السهم موجود في المفضلة بالفعل'); return; }
+    if (list.includes(currentSymbol)) { showToast('السهم موجود في المفضلة'); return; }
     list.push(currentSymbol);
     saveWatchlist(list);
     renderWatchlistBadge();
@@ -1007,17 +965,19 @@ function renderWatchlistPanel() {
 }
 
 // ======= Alerts =======
-function getAlerts() { return JSON.parse(localStorage.getItem('priceAlerts') || '[]'); }
-function saveAlerts(list) { localStorage.setItem('priceAlerts', JSON.stringify(list)); }
+function getAlerts()         { return JSON.parse(localStorage.getItem('priceAlerts') || '[]'); }
+function saveAlerts(list)    { localStorage.setItem('priceAlerts', JSON.stringify(list)); }
 
 function openAlertModal() {
     if (!currentSymbol) return;
-    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    set('alertSymbolLabel', `السهم: ${currentSymbol}`);
+    const sl = document.getElementById('alertSymbolLabel');
+    if (sl) sl.textContent = `السهم: ${currentSymbol}`;
     const ap = document.getElementById('alertPrice');
     if (ap) ap.value = currentData ? currentData.current : '';
-    document.getElementById('alertModal').classList.remove('hidden');
-    document.getElementById('overlay').classList.remove('hidden');
+    const m = document.getElementById('alertModal');
+    const o = document.getElementById('overlay');
+    if (m) m.classList.remove('hidden');
+    if (o) o.classList.remove('hidden');
 }
 
 function closeAlertModal() {
@@ -1028,7 +988,7 @@ function closeAlertModal() {
 }
 
 function saveAlert() {
-    const type = document.getElementById('alertType').value;
+    const type  = document.getElementById('alertType').value;
     const price = parseFloat(document.getElementById('alertPrice').value);
     if (!price || isNaN(price)) { showToast('أدخل سعراً صحيحاً'); return; }
     const alerts = getAlerts();
@@ -1057,7 +1017,7 @@ function renderAlertsPanel() {
     const container = document.getElementById('alerts-items');
     if (!container) return;
     const alerts = getAlerts();
-    if (!alerts.length) { container.innerHTML = '<p class="empty-msg">لا توجد تنبيهات مضافة</p>'; return; }
+    if (!alerts.length) { container.innerHTML = '<p class="empty-msg">لا توجد تنبيهات</p>'; return; }
     container.innerHTML = alerts.map((a, i) => `
         <div class="alert-item">
             <div><strong>${a.symbol}</strong> — ${a.type === 'above' ? 'يتجاوز' : 'ينزل عن'} <strong>${a.price}</strong></div>
@@ -1106,9 +1066,10 @@ function openTab(id) {
     if (!panel) return;
     panel.classList.remove('hidden');
     setTimeout(() => panel.classList.add('open'), 10);
-    document.getElementById('overlay').classList.remove('hidden');
+    const o = document.getElementById('overlay');
+    if (o) o.classList.remove('hidden');
     if (id === 'watchlist-tab') renderWatchlistPanel();
-    if (id === 'alerts-tab') renderAlertsPanel();
+    if (id === 'alerts-tab')    renderAlertsPanel();
 }
 
 function closePanel(id) {
@@ -1143,17 +1104,17 @@ function formatPrice(val, currency) {
 
 function formatVolume(vol) {
     if (!vol) return '—';
-    if (vol >= 1e9) return `${(vol / 1e9).toFixed(1)}B`;
-    if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)}M`;
-    if (vol >= 1e3) return `${(vol / 1e3).toFixed(0)}K`;
+    if (vol >= 1e9) return `${(vol/1e9).toFixed(1)}B`;
+    if (vol >= 1e6) return `${(vol/1e6).toFixed(1)}M`;
+    if (vol >= 1e3) return `${(vol/1e3).toFixed(0)}K`;
     return vol.toString();
 }
 
 function formatMarketCap(val) {
     if (!val || val === 0) return 'N/A';
-    if (val >= 1e12) return `${(val / 1e12).toFixed(2)}T`;
-    if (val >= 1e9) return `${(val / 1e9).toFixed(2)}B`;
-    if (val >= 1e6) return `${(val / 1e6).toFixed(2)}M`;
+    if (val >= 1e12) return `${(val/1e12).toFixed(2)}T`;
+    if (val >= 1e9)  return `${(val/1e9).toFixed(2)}B`;
+    if (val >= 1e6)  return `${(val/1e6).toFixed(2)}M`;
     return val.toString();
 }
 
@@ -1167,8 +1128,11 @@ function setSignal(id, type, text) {
 function styleSignal(id, type) {
     const el = document.getElementById(id);
     if (!el) return;
-    el.style.background = type === 'buy' ? 'rgba(0,230,118,0.15)' : type === 'sell' ? 'rgba(255,23,68,0.15)' : 'rgba(255,171,64,0.1)';
-    el.style.color = type === 'buy' ? '#00e676' : type === 'sell' ? '#ff1744' : '#ffab40';
+    el.style.background = type === 'buy'  ? 'rgba(0,230,118,0.15)' :
+                          type === 'sell' ? 'rgba(255,23,68,0.15)'  :
+                                           'rgba(255,171,64,0.1)';
+    el.style.color = type === 'buy'  ? '#00e676' :
+                     type === 'sell' ? '#ff1744'  : '#ffab40';
 }
 
 function showLoading(show) {
@@ -1176,9 +1140,7 @@ function showLoading(show) {
     if (el) el.classList.toggle('hidden', !show);
 }
 
-function showError(msg) {
-    showToast(msg, true);
-}
+function showError(msg) { showToast(msg, true); }
 
 function showToast(msg, isError = false) {
     const existing = document.querySelector('.toast');
@@ -1187,16 +1149,15 @@ function showToast(msg, isError = false) {
     toast.className = 'toast';
     toast.textContent = msg;
     toast.style.cssText = `
-        position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
-        background: ${isError ? 'rgba(255,23,68,0.95)' : 'rgba(0,229,255,0.95)'};
-        color: ${isError ? '#fff' : '#000'};
-        padding: 12px 24px; border-radius: 50px; font-family: Cairo, sans-serif;
-        font-size: 0.9rem; font-weight: 600; z-index: 9999;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        animation: slideUp 0.3s ease;
-    `;
+        position:fixed; bottom:30px; left:50%; transform:translateX(-50%);
+        background:${isError ? 'rgba(255,23,68,0.95)' : 'rgba(0,229,255,0.95)'};
+        color:${isError ? '#fff' : '#000'};
+        padding:12px 24px; border-radius:50px; font-family:Cairo,sans-serif;
+        font-size:0.9rem; font-weight:600; z-index:9999;
+        box-shadow:0 4px 20px rgba(0,0,0,0.3); white-space:nowrap;
+        animation:slideUp 0.3s ease;`;
     document.body.appendChild(toast);
-    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+    setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
 // ======= AI Deep Analysis =======
@@ -1204,41 +1165,41 @@ function generateAIDeepAnalysis(data) {
     const container = document.getElementById('ai-deep-content');
     if (!container) return;
 
-    const analysis = data.analysis || {};
+    const analysis   = data.analysis   || {};
     const indicators = analysis.indicators || {};
-    const rec = data.recommendation || {};
-    const targets = analysis.targets || {};
-    const trend = analysis.trend || 'neutral';
-    const rsi = indicators.rsi || 50;
-    const macd = indicators.macd || {};
-    const bb = indicators.bollinger || {};
-    const price = data.current || 0;
-    const change = data.change || 0;
-    const sma20 = indicators.sma_20 || price;
-    const sma50 = indicators.sma_50 || price;
-    const sma200 = indicators.sma_200 || price;
+    const rec        = data.recommendation || {};
+    const targets    = analysis.targets || {};
+    const trend      = analysis.trend  || 'neutral';
+    const rsi        = indicators.rsi  || 50;
+    const macd_ind   = indicators.macd || {};
+    const bb         = indicators.bollinger || {};
+    const price      = data.current || 0;
+    const change     = data.change  || 0;
+    const sma20      = indicators.sma_20  || price;
+    const sma50      = indicators.sma_50  || price;
+    const sma200     = indicators.sma_200 || price;
 
     let directionPct = 0, directionClass = 'neutral', directionIcon = '↔️', directionTitle = 'تذبذب جانبي';
-    if (trend === 'strong_bullish') { directionPct = 85; directionClass = 'up'; directionIcon = '🚀'; directionTitle = 'صعود قوي جداً'; }
-    else if (trend === 'bullish') { directionPct = 65; directionClass = 'up'; directionIcon = '📈'; directionTitle = 'اتجاه صاعد'; }
-    else if (trend === 'strong_bearish') { directionPct = -85; directionClass = 'down'; directionIcon = '📉'; directionTitle = 'هبوط قوي جداً'; }
-    else if (trend === 'bearish') { directionPct = -65; directionClass = 'down'; directionIcon = '⬇️'; directionTitle = 'اتجاه هابط'; }
+    if      (trend === 'strong_bullish') { directionPct =  85; directionClass='up';      directionIcon='🚀'; directionTitle='صعود قوي جداً'; }
+    else if (trend === 'bullish')        { directionPct =  65; directionClass='up';      directionIcon='📈'; directionTitle='اتجاه صاعد'; }
+    else if (trend === 'strong_bearish') { directionPct = -85; directionClass='down';    directionIcon='📉'; directionTitle='هبوط قوي جداً'; }
+    else if (trend === 'bearish')        { directionPct = -65; directionClass='down';    directionIcon='⬇️'; directionTitle='اتجاه هابط'; }
 
     const signalScore = rec.score || 0;
-    const signalPct = Math.min(Math.abs(signalScore) * 20, 100);
+    const signalPct   = Math.min(Math.abs(signalScore) * 20, 100);
     const signalColor = signalScore > 0 ? 'linear-gradient(90deg,#00e676,#00e5ff)' :
                         signalScore < 0 ? 'linear-gradient(90deg,#ff1744,#ff6b6b)' :
-                        'linear-gradient(90deg,#ffab40,#ffd700)';
+                                          'linear-gradient(90deg,#ffab40,#ffd700)';
 
     const reasons = [];
-    if (change > 5) reasons.push(`ارتفع السهم ${change.toFixed(2)}% اليوم — زخم شرائي قوي`);
+    if      (change > 5)  reasons.push(`ارتفع السهم ${change.toFixed(2)}% اليوم — زخم شرائي قوي`);
     else if (change < -5) reasons.push(`انخفض السهم ${Math.abs(change).toFixed(2)}% اليوم — ضغط بيعي حاد`);
-    else if (change > 0) reasons.push(`ارتفع السهم ${change.toFixed(2)}% — حركة إيجابية معتدلة`);
-    else reasons.push(`انخفض السهم ${Math.abs(change).toFixed(2)}% — ضغط بيعي طفيف`);
+    else if (change > 0)  reasons.push(`ارتفع السهم ${change.toFixed(2)}% — حركة إيجابية معتدلة`);
+    else                  reasons.push(`انخفض السهم ${Math.abs(change).toFixed(2)}% — ضغط بيعي طفيف`);
 
-    if (rsi < 30) reasons.push(`RSI عند ${rsi} — تشبع بيعي، فرصة انتعاش محتملة`);
+    if      (rsi < 30) reasons.push(`RSI عند ${rsi} — تشبع بيعي، فرصة انتعاش محتملة`);
     else if (rsi > 70) reasons.push(`RSI عند ${rsi} — تشبع شرائي، خطر تصحيح قريب`);
-    else reasons.push(`RSI عند ${rsi} — منطقة محايدة`);
+    else               reasons.push(`RSI عند ${rsi} — منطقة محايدة`);
 
     reasons.push(price > sma20
         ? `السعر فوق SMA 20 (${formatPrice(sma20, data.currency)}) — اتجاه قصير المدى إيجابي`
@@ -1248,28 +1209,28 @@ function generateAIDeepAnalysis(data) {
         ? `السعر فوق SMA 200 (${formatPrice(sma200, data.currency)}) — الاتجاه الرئيسي صاعد`
         : `السعر تحت SMA 200 (${formatPrice(sma200, data.currency)}) — الاتجاه الرئيسي هابط`);
 
-    if (macd.histogram > 0) reasons.push('MACD إيجابي — زخم صاعد يدعم الحركة');
-    else if (macd.histogram < 0) reasons.push('MACD سلبي — زخم هابط يضغط على السعر');
+    if      (macd_ind.histogram > 0) reasons.push('MACD إيجابي — زخم صاعد يدعم الحركة');
+    else if (macd_ind.histogram < 0) reasons.push('MACD سلبي — زخم هابط يضغط على السعر');
 
     const volRatio = (data.volume || 0) / (data.avg_volume || 1);
-    if (volRatio > 2) reasons.push(`حجم التداول ${volRatio.toFixed(1)}x المتوسط — اهتمام مؤسسي استثنائي`);
-    else if (volRatio > 1.2) reasons.push(`حجم التداول ${volRatio.toFixed(1)}x المتوسط — نشاط أعلى من المعتاد`);
-    else reasons.push(`حجم التداول طبيعي (${volRatio.toFixed(1)}x المتوسط)`);
+    if      (volRatio > 2)   reasons.push(`حجم ${volRatio.toFixed(1)}x المتوسط — اهتمام مؤسسي استثنائي`);
+    else if (volRatio > 1.2) reasons.push(`حجم ${volRatio.toFixed(1)}x المتوسط — نشاط أعلى من المعتاد`);
+    else                     reasons.push(`حجم طبيعي (${volRatio.toFixed(1)}x المتوسط)`);
 
-    if (price <= bb.lower) reasons.push('السعر لامس الحد السفلي لبولينجر — إشارة انتعاش محتملة');
+    if      (price <= bb.lower) reasons.push('السعر لامس الحد السفلي لبولينجر — إشارة انتعاش محتملة');
     else if (price >= bb.upper) reasons.push('السعر لامس الحد العلوي لبولينجر — احتمال تصحيح');
 
-    const target1 = targets.target_1 || price * 1.05;
+    const target1  = targets.target_1 || price * 1.05;
     const stopLoss = targets.stop_loss || price * 0.95;
-    const upPct = ((target1 - price) / price * 100).toFixed(1);
+    const upPct   = ((target1  - price) / price * 100).toFixed(1);
     const downPct = ((price - stopLoss) / price * 100).toFixed(1);
 
     const summaryMap = {
         strong_bullish: `السهم في صعود قوي جداً. جميع المؤشرات تدعم الاتجاه الصعودي. الهدف الأول عند ${formatPrice(target1, data.currency)} (+${upPct}%).`,
-        bullish: `السهم في اتجاه صاعد. معظم المؤشرات إيجابية. يُنصح بالدخول مع وقف خسارة عند ${formatPrice(stopLoss, data.currency)} (-${downPct}%).`,
-        neutral: `السهم في تذبذب جانبي. يُنصح بالانتظار حتى ظهور إشارة واضحة.`,
-        bearish: `السهم تحت ضغط بيعي. يُنصح بتجنب الدخول حتى ظهور إشارات انتعاش.`,
-        strong_bearish: `السهم في هبوط حاد. ينصح بالابتعاد أو البيع مع وقف خسارة صارم.`,
+        bullish:        `السهم في اتجاه صاعد. معظم المؤشرات إيجابية. وقف خسارة مقترح عند ${formatPrice(stopLoss, data.currency)} (-${downPct}%).`,
+        neutral:        'السهم في تذبذب جانبي. يُنصح بالانتظار حتى ظهور إشارة واضحة.',
+        bearish:        'السهم تحت ضغط بيعي. يُنصح بتجنب الدخول حتى ظهور إشارات انتعاش.',
+        strong_bearish: 'السهم في هبوط حاد. ينصح بالابتعاد أو البيع مع وقف خسارة صارم.',
     };
 
     container.innerHTML = `
@@ -1287,7 +1248,7 @@ function generateAIDeepAnalysis(data) {
                 </div>
                 <div class="ai-stat-box">
                     <span class="ai-stat-label">نسبة المخاطرة/العائد</span>
-                    <span class="ai-stat-value ${parseFloat(upPct) > parseFloat(downPct) ? 'up' : 'down'}">1:${(parseFloat(upPct) / Math.max(parseFloat(downPct), 0.1)).toFixed(1)}</span>
+                    <span class="ai-stat-value ${parseFloat(upPct) > parseFloat(downPct) ? 'up' : 'down'}">1:${(parseFloat(upPct)/Math.max(parseFloat(downPct),0.1)).toFixed(1)}</span>
                     <span class="ai-stat-sub">هدف ${upPct}% / خطر ${downPct}%</span>
                 </div>
             </div>
@@ -1328,5 +1289,7 @@ function generateAIDeepAnalysis(data) {
 
 // ======= CSS Animation =======
 const styleEl = document.createElement('style');
-styleEl.textContent = `@keyframes slideUp { from { transform: translateX(-50%) translateY(20px); opacity:0; } to { transform: translateX(-50%) translateY(0); opacity:1; } }`;
+styleEl.textContent = `
+@keyframes slideUp { from { transform:translateX(-50%) translateY(20px); opacity:0; } to { transform:translateX(-50%) translateY(0); opacity:1; } }
+`;
 document.head.appendChild(styleEl);
