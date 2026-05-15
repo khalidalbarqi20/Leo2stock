@@ -6,10 +6,8 @@ import time
 
 FINNHUB_KEY = os.environ.get('FINNHUB_KEY', '')
 MARKETAUX_KEY = os.environ.get('MARKETAUX_KEY', '')
-
 FINNHUB_BASE = 'https://finnhub.io/api/v1'
 
-# Rate limiting
 _last_request_time = 0
 _min_interval = 1.5
 
@@ -36,9 +34,7 @@ def _get_finnhub(endpoint, params={}):
 
 
 class NewsAnalyzer:
-    """محلل الأخبار والمشاعر السوقية"""
 
-    # كلمات مفتاحية للمشاعر
     POSITIVE_WORDS = [
         'profit', 'growth', 'beat', 'strong', 'surge', 'rally', 'boom', 'bullish',
         'upgrade', 'outperform', 'buy', 'recommend', 'success', 'record', 'exceed',
@@ -63,39 +59,31 @@ class NewsAnalyzer:
 
     def __init__(self):
         self.cache = {}
-        self.cache_expiry = 30  # 30 minutes
+        self.cache_expiry = 30
 
     def get_news(self, symbol, market='us', limit=10):
-        """جلب أخبار السهم من Finnhub"""
         cache_key = f"news_{symbol}_{market}_{limit}"
         if cache_key in self.cache:
             cached_time, data = self.cache[cache_key]
             if datetime.now() - cached_time < timedelta(minutes=self.cache_expiry):
                 return data
 
-        # Finnhub news
         to_date = datetime.now().strftime('%Y-%m-%d')
         from_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
 
         news_data = _get_finnhub('/company-news', {
-            'symbol': symbol,
-            'from': from_date,
-            'to': to_date
+            'symbol': symbol, 'from': from_date, 'to': to_date
         })
 
         if not news_data or not isinstance(news_data, list):
-            # Fallback: generate synthetic news
             news_data = self._generate_synthetic_news(symbol, market)
 
-        # Analyze sentiment for each article
         analyzed_news = []
         for article in news_data[:limit]:
             headline = article.get('headline', '')
             summary = article.get('summary', '')
             text = f"{headline} {summary}"
-
             sentiment = self._analyze_sentiment(text)
-
             analyzed_news.append({
                 'headline': headline,
                 'summary': summary,
@@ -117,9 +105,6 @@ class NewsAnalyzer:
         return result
 
     def _generate_synthetic_news(self, symbol, market):
-        """توليد أخبار تركيبية عند فشل API"""
-        hash_val = sum(ord(c) for c in symbol)
-
         templates = [
             {'headline': f'{symbol} يتداول بثبات مع اهتمام مؤسسي متزايد', 'source': 'Market Watch'},
             {'headline': f'تحليل: {symbol} يظهر إشارات فنية إيجابية', 'source': 'Technical Analysis'},
@@ -127,36 +112,26 @@ class NewsAnalyzer:
             {'headline': f'{symbol} يستفيد من بيئة السوق المواتية', 'source': 'Market News'},
             {'headline': f'مستثمرون يراقبون {symbol} عن كثب قبل أرباح الربع', 'source': 'Investor Daily'},
         ]
-
         news = []
         for i, template in enumerate(templates):
             news.append({
                 'headline': template['headline'],
-                'summary': f'تحليل شامل لأداء سهم {symbol} يظهر اتجاهاً إيجابياً مع دعم من المؤشرات الفنية والأساسية.',
+                'summary': f'تحليل شامل لأداء سهم {symbol} يظهر اتجاهاً إيجابياً مع دعم من المؤشرات الفنية.',
                 'source': template['source'],
                 'url': '',
                 'datetime': int((datetime.now() - timedelta(days=i)).timestamp()),
                 'image': '',
             })
-
         return news
 
     def _analyze_sentiment(self, text):
-        """تحليل المشاعر في النص"""
         text_lower = text.lower()
-
         positive_count = sum(1 for word in self.POSITIVE_WORDS if word in text_lower)
         negative_count = sum(1 for word in self.NEGATIVE_WORDS if word in text_lower)
-
         total = positive_count + negative_count
+
         if total == 0:
-            return {
-                'score': 0,
-                'label': 'محايد',
-                'positive_words': positive_count,
-                'negative_words': negative_count,
-                'confidence': 0.5
-            }
+            return {'score': 0, 'label': 'محايد', 'positive_words': 0, 'negative_words': 0, 'confidence': 0.5}
 
         score = (positive_count - negative_count) / total
 
@@ -177,48 +152,36 @@ class NewsAnalyzer:
             confidence = 0.5
 
         return {
-            'score': round(score, 3),
-            'label': label,
-            'positive_words': positive_count,
-            'negative_words': negative_count,
+            'score': round(score, 3), 'label': label,
+            'positive_words': positive_count, 'negative_words': negative_count,
             'confidence': round(confidence, 2)
         }
 
     def _calculate_overall_sentiment(self, articles):
-        """حساب المشاعر الإجمالية"""
         if not articles:
             return {'score': 0, 'label': 'لا توجد بيانات', 'confidence': 0}
 
         scores = [a['sentiment']['score'] for a in articles]
         avg_score = sum(scores) / len(scores)
-
         confidences = [a['sentiment']['confidence'] for a in articles]
         avg_confidence = sum(confidences) / len(confidences)
-
         positive_articles = sum(1 for a in articles if a['sentiment']['score'] > 0.1)
         negative_articles = sum(1 for a in articles if a['sentiment']['score'] < -0.1)
         neutral_articles = len(articles) - positive_articles - negative_articles
 
         if avg_score > 0.3:
-            label = 'إيجابية بشكل عام'
-            color = 'green'
+            label = 'إيجابية بشكل عام'; color = 'green'
         elif avg_score > 0.1:
-            label = 'إيجابية'
-            color = 'lightgreen'
+            label = 'إيجابية'; color = 'lightgreen'
         elif avg_score < -0.3:
-            label = 'سلبية بشكل عام'
-            color = 'red'
+            label = 'سلبية بشكل عام'; color = 'red'
         elif avg_score < -0.1:
-            label = 'سلبية'
-            color = 'orange'
+            label = 'سلبية'; color = 'orange'
         else:
-            label = 'محايدة'
-            color = 'gray'
+            label = 'محايدة'; color = 'gray'
 
         return {
-            'score': round(avg_score, 3),
-            'label': label,
-            'color': color,
+            'score': round(avg_score, 3), 'label': label, 'color': color,
             'confidence': round(avg_confidence, 2),
             'positive_count': positive_articles,
             'negative_count': negative_articles,
@@ -227,11 +190,8 @@ class NewsAnalyzer:
         }
 
     def get_market_sentiment(self):
-        """جلب المشاعر العامة للسوق"""
-        # Use major indices as proxy
         indices = ['SPY', 'QQQ', 'DIA']
         all_sentiments = []
-
         for idx in indices:
             try:
                 news = self.get_news(idx, 'us', limit=5)
@@ -241,46 +201,32 @@ class NewsAnalyzer:
                 continue
 
         if not all_sentiments:
-            return {
-                'score': 0,
-                'label': 'محايد',
-                'vix_estimate': 20,
-                'fear_greed_index': 50,
-            }
+            return {'score': 0, 'label': 'محايد', 'vix_estimate': 20, 'fear_greed_index': 50}
 
         avg = sum(all_sentiments) / len(all_sentiments)
-
-        # Estimate VIX and Fear & Greed based on sentiment
         vix_estimate = max(10, min(40, 25 - avg * 20))
         fear_greed = max(0, min(100, 50 + avg * 50))
 
         if fear_greed > 75:
-            mood = 'جشع'
-            mood_color = 'green'
+            mood = 'جشع'; mood_color = 'green'
         elif fear_greed > 55:
-            mood = 'تفاؤل'
-            mood_color = 'lightgreen'
+            mood = 'تفاؤل'; mood_color = 'lightgreen'
         elif fear_greed > 45:
-            mood = 'محايد'
-            mood_color = 'yellow'
+            mood = 'محايد'; mood_color = 'yellow'
         elif fear_greed > 25:
-            mood = 'خوف'
-            mood_color = 'orange'
+            mood = 'خوف'; mood_color = 'orange'
         else:
-            mood = 'ذعر'
-            mood_color = 'red'
+            mood = 'ذعر'; mood_color = 'red'
 
         return {
             'score': round(avg, 3),
             'label': 'إيجابية' if avg > 0.1 else 'سلبية' if avg < -0.1 else 'محايدة',
             'vix_estimate': round(vix_estimate, 1),
             'fear_greed_index': round(fear_greed, 1),
-            'mood': mood,
-            'mood_color': mood_color,
+            'mood': mood, 'mood_color': mood_color,
         }
 
     def get_sector_news(self, sector, limit=5):
-        """جلب أخبار القطاع"""
         sector_keywords = {
             'technology': ['AAPL', 'MSFT', 'GOOGL', 'META', 'NVDA'],
             'energy': ['XOM', 'CVX', 'COP', 'OXY'],
@@ -288,10 +234,8 @@ class NewsAnalyzer:
             'healthcare': ['JNJ', 'UNH', 'LLY', 'PFE'],
             'consumer': ['AMZN', 'WMT', 'HD', 'COST'],
         }
-
         symbols = sector_keywords.get(sector.lower(), ['SPY'])
         all_news = []
-
         for sym in symbols[:3]:
             try:
                 news = self.get_news(sym, 'us', limit=3)
@@ -299,7 +243,6 @@ class NewsAnalyzer:
             except:
                 continue
 
-        # Remove duplicates and sort by sentiment confidence
         seen = set()
         unique_news = []
         for article in all_news:
@@ -309,7 +252,6 @@ class NewsAnalyzer:
                 unique_news.append(article)
 
         unique_news.sort(key=lambda x: x['sentiment']['confidence'], reverse=True)
-
         return {
             'sector': sector,
             'articles': unique_news[:limit],
@@ -317,9 +259,7 @@ class NewsAnalyzer:
         }
 
     def get_earnings_calendar(self, symbol=None, days_ahead=7):
-        """جلب تقويم الأرباح"""
         if symbol:
-            # Finnhub earnings
             data = _get_finnhub('/stock/earnings', {'symbol': symbol})
             if data and isinstance(data, list):
                 earnings = []
@@ -335,10 +275,8 @@ class NewsAnalyzer:
                     })
                 return {'symbol': symbol, 'earnings': earnings}
 
-        # Generate synthetic earnings data
         hash_val = sum(ord(c) for c in (symbol or 'DEFAULT'))
         future_date = datetime.now() + timedelta(days=(hash_val % 45) + 15)
-
         return {
             'symbol': symbol or 'N/A',
             'earnings': [{
@@ -353,7 +291,6 @@ class NewsAnalyzer:
         }
 
     def get_insider_sentiment(self, symbol):
-        """جلب مشاعر التداول الداخلي"""
         data = _get_finnhub('/stock/insider-sentiment', {
             'symbol': symbol,
             'from': (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d'),
@@ -361,7 +298,6 @@ class NewsAnalyzer:
         })
 
         if not data or not isinstance(data, dict):
-            # Synthetic data
             hash_val = sum(ord(c) for c in symbol)
             return {
                 'symbol': symbol,
@@ -380,11 +316,7 @@ class NewsAnalyzer:
         total_sell = sum(abs(d.get('mspr', 0)) for d in data_list if d.get('mspr', 0) < 0)
         net = total_buy - total_sell
         total = total_buy + total_sell
-
-        if total > 0:
-            net_pct = (net / total) * 100
-        else:
-            net_pct = 0
+        net_pct = (net / total) * 100 if total > 0 else 0
 
         return {
             'symbol': symbol,
