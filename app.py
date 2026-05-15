@@ -12,7 +12,7 @@ from news_analyzer import NewsAnalyzer
 from multi_timeframe import MultiTimeframeAnalyzer
 from alert_system import AlertSystem
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 fetcher = StockDataFetcher()
@@ -68,29 +68,22 @@ def analyze_stock(symbol):
         analysis = analyzer.full_analysis(data['prices'])
         rec = analyzer.get_recommendation(analysis)
 
-        # بيانات الرسوم البيانية
         chart_data = analyzer.get_chart_data(data['prices'])
         prices_arr = fetcher.prices_to_array(data['prices'])
 
-        # استخراج التواريخ
         dates_list = []
         for p in prices_arr:
             dates_list.append(p['date'])
 
-        # Calculate Fibonacci levels
         fibonacci = analyzer.calculate_fibonacci(data['prices'])
 
-        # Risk Analysis
         risk_analysis = risk_manager.calculate_risk_reward(
             data['current'],
             analysis['targets']['target_1'],
             analysis['targets']['stop_loss']
         )
 
-        # News Analysis
         news_data = news_analyzer.get_news(sym, mkt, limit=5)
-
-        # Multi-timeframe Analysis
         mtf_data = mtf_analyzer.analyze_all_timeframes(sym, mkt)
 
         result = {
@@ -125,11 +118,10 @@ def chart_data(symbol):
         return jsonify({'error': 'تعذّر جلب البيانات'})
 
     try:
-        chart_data = analyzer.get_chart_data(data['prices'])
+        chart_result = analyzer.get_chart_data(data['prices'])
         prices_arr = fetcher.prices_to_array(data['prices'])
         dates_list = [p['date'] for p in prices_arr]
 
-        # تصفية حسب الفترة
         days_map = {'1mo': 30, '3mo': 90, '6mo': 180, '1y': 365}
         days = days_map.get(period, 180)
 
@@ -137,13 +129,13 @@ def chart_data(symbol):
             start = len(dates_list) - days
             dates_list = dates_list[start:]
             for k in ['prices_list', 'opens_list', 'highs_list', 'lows_list', 'volumes_list',
-                      'sma20_list', 'sma50_list', 'sma200_list', 'rsi_list', 
+                      'sma20_list', 'sma50_list', 'sma200_list', 'rsi_list',
                       'macd_list', 'signal_list', 'histogram_list']:
-                if k in chart_data and chart_data[k]:
-                    chart_data[k] = chart_data[k][start:]
+                if k in chart_result and chart_result[k]:
+                    chart_result[k] = chart_result[k][start:]
 
-        chart_data['dates_list'] = dates_list
-        return jsonify(chart_data)
+        chart_result['dates_list'] = dates_list
+        return jsonify(chart_result)
     except Exception as e:
         return jsonify({'error': str(e)})
 
@@ -199,10 +191,10 @@ def rsi_scan():
         return jsonify(cached)
 
     if market == 'saudi':
-        symbols = ['2222', '1180', '1120', '2010', '1010', '3020', '2350', '8280', '2050', '1211', 
+        symbols = ['2222', '1180', '1120', '2010', '1010', '3020', '2350', '8280', '2050', '1211',
                    '4200', '2220', '1060', '1150', '2380', '4230', '2360', '1140', '3001', '3002']
     else:
-        symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'JNJ', 'V', 
+        symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'JNJ', 'V',
                    'PG', 'HD', 'MA', 'UNH', 'BAC', 'XOM', 'CVX', 'DIS', 'NFLX', 'AMD']
 
     results = []
@@ -323,12 +315,11 @@ def search():
     return jsonify(safe_data(data))
 
 # ═══════════════════════════════════════════════════════════
-# ═══ المرحلة الثانية: Backtesting API ═══════════════════
+# ═══ Backtesting API ═══════════════════════════════════════
 # ═══════════════════════════════════════════════════════════
 
 @app.route('/api/backtest/<symbol>')
 def backtest_stock(symbol):
-    """تشغيل Backtest على سهم"""
     sym = symbol.upper().replace('.SR', '')
     mkt = 'saudi' if sym.isdigit() else 'us'
 
@@ -358,7 +349,6 @@ def backtest_stock(symbol):
         if 'error' in result:
             return jsonify(result)
 
-        # Add metadata
         result['symbol'] = sym
         result['market'] = mkt
         result['strategy_name'] = backtester.STRATEGIES.get(strategy, strategy)
@@ -374,12 +364,11 @@ def backtest_stock(symbol):
 
 @app.route('/api/backtest-compare/<symbol>')
 def backtest_compare(symbol):
-    """مقارنة جميع الاستراتيجيات"""
     sym = symbol.upper().replace('.SR', '')
     mkt = 'saudi' if sym.isdigit() else 'us'
 
-    key = f"backtest_compare_{sym}_{mkt}"
-    cached = cache_get(key)
+    cache_key = f"backtest_compare_{sym}_{mkt}"
+    cached = cache_get(cache_key)
     if cached:
         return jsonify(cached)
 
@@ -398,19 +387,18 @@ def backtest_compare(symbol):
             'best_return': -float('inf')
         }
 
-        for key, result in results.items():
+        for strat_key, result in results.items():
             if result.get('total_return_pct', -999) > comparison['best_return']:
                 comparison['best_return'] = result['total_return_pct']
-                comparison['best_strategy'] = key
+                comparison['best_strategy'] = strat_key
 
-        cache_set(f"backtest_compare_{sym}_{mkt}", comparison, minutes=30)
+        cache_set(cache_key, comparison, minutes=30)
         return jsonify(comparison)
     except Exception as e:
         return jsonify({'error': f'خطأ في المقارنة: {str(e)}'})
 
 @app.route('/api/backtest-strategies')
 def backtest_strategies():
-    """قائمة الاستراتيجيات المتاحة"""
     return jsonify({
         'strategies': [
             {'key': k, 'name': v} for k, v in backtester.STRATEGIES.items()
@@ -418,127 +406,94 @@ def backtest_strategies():
     })
 
 # ═══════════════════════════════════════════════════════════
-# ═══ المرحلة الثانية: Risk Management API ═════════════════
+# ═══ Risk Management API ═══════════════════════════════════
 # ═══════════════════════════════════════════════════════════
 
 @app.route('/api/risk/position-size', methods=['POST'])
 def calculate_position_size():
-    """حساب حجم المركز المثالي"""
     data = request.get_json() or {}
-
     account_balance = float(data.get('account_balance', 10000))
     entry_price = float(data.get('entry_price', 100))
     stop_loss = float(data.get('stop_loss', 95))
     risk_per_trade = float(data.get('risk_per_trade', 0.02))
     max_position_pct = float(data.get('max_position_pct', 0.25))
-
     result = risk_manager.calculate_position_size(
-        account_balance, entry_price, stop_loss,
-        risk_per_trade, max_position_pct
+        account_balance, entry_price, stop_loss, risk_per_trade, max_position_pct
     )
     return jsonify(result)
 
 @app.route('/api/risk/kelly', methods=['POST'])
 def calculate_kelly():
-    """حساب Kelly Criterion"""
     data = request.get_json() or {}
-
     win_rate = float(data.get('win_rate', 0.5))
     avg_win_pct = float(data.get('avg_win_pct', 5))
     avg_loss_pct = float(data.get('avg_loss_pct', 3))
-
     result = risk_manager.calculate_kelly_criterion(win_rate, avg_win_pct, avg_loss_pct)
     return jsonify(result)
 
 @app.route('/api/risk/risk-reward', methods=['POST'])
 def calculate_risk_reward():
-    """حساب Risk/Reward Ratio"""
     data = request.get_json() or {}
-
     entry_price = float(data.get('entry_price', 100))
     target_price = float(data.get('target_price', 110))
     stop_loss_price = float(data.get('stop_loss_price', 95))
-
     result = risk_manager.calculate_risk_reward(entry_price, target_price, stop_loss_price)
     return jsonify(result)
 
 @app.route('/api/risk/stop-loss', methods=['POST'])
 def calculate_stop_loss():
-    """حساب وقف الخسارة"""
     data = request.get_json() or {}
-
     entry_price = float(data.get('entry_price', 100))
     atr = float(data.get('atr', 2))
     method = data.get('method', 'atr')
     multiplier = float(data.get('multiplier', 2.0))
     support_level = data.get('support_level')
     recent_low = data.get('recent_low')
-
-    result = risk_manager.calculate_stop_loss(
-        entry_price, atr, method, multiplier,
-        support_level, recent_low
-    )
+    result = risk_manager.calculate_stop_loss(entry_price, atr, method, multiplier, support_level, recent_low)
     return jsonify(result)
 
 @app.route('/api/risk/trailing-stop', methods=['POST'])
 def calculate_trailing_stop():
-    """حساب Trailing Stop"""
     data = request.get_json() or {}
-
     current_price = float(data.get('current_price', 100))
     highest_price = float(data.get('highest_price', 110))
     trailing_pct = float(data.get('trailing_pct', 0.10))
     atr = data.get('atr')
     atr_multiplier = float(data.get('atr_multiplier', 3.0))
-
-    result = risk_manager.calculate_trailing_stop(
-        current_price, highest_price, trailing_pct,
-        atr, atr_multiplier
-    )
+    result = risk_manager.calculate_trailing_stop(current_price, highest_price, trailing_pct, atr, atr_multiplier)
     return jsonify(result)
 
 @app.route('/api/risk/portfolio', methods=['POST'])
 def portfolio_risk_analysis():
-    """تحليل مخاطر المحفظة"""
     data = request.get_json() or {}
-
     positions = data.get('positions', [])
     account_balance = float(data.get('account_balance', 10000))
-
     result = risk_manager.portfolio_risk_analysis(positions, account_balance)
     return jsonify(result)
 
 @app.route('/api/risk/monte-carlo', methods=['POST'])
 def monte_carlo_simulation():
-    """محاكاة Monte Carlo"""
     data = request.get_json() or {}
-
     historical_returns = data.get('historical_returns', [])
     initial_capital = float(data.get('initial_capital', 10000))
     num_simulations = int(data.get('num_simulations', 1000))
     num_days = int(data.get('num_days', 252))
-
-    result = risk_manager.monte_carlo_simulation(
-        historical_returns, initial_capital, num_simulations, num_days
-    )
+    result = risk_manager.monte_carlo_simulation(historical_returns, initial_capital, num_simulations, num_days)
     return jsonify(result)
 
 # ═══════════════════════════════════════════════════════════
-# ═══ المرحلة الثانية: News & Sentiment API ════════════════
+# ═══ News & Sentiment API ══════════════════════════════════
 # ═══════════════════════════════════════════════════════════
 
 @app.route('/api/news/<symbol>')
 def get_stock_news(symbol):
-    """جلب أخبار السهم"""
     sym = symbol.upper().replace('.SR', '')
     mkt = 'saudi' if sym.isdigit() else 'us'
     limit = int(request.args.get('limit', 10))
-
     key = f"news_{sym}_{mkt}_{limit}"
     cached = cache_get(key)
     if cached:
         return jsonify(cached)
-
     try:
         result = news_analyzer.get_news(sym, mkt, limit)
         cache_set(key, result, minutes=15)
@@ -548,12 +503,10 @@ def get_stock_news(symbol):
 
 @app.route('/api/news/market-sentiment')
 def get_market_sentiment():
-    """جلب المشاعر العامة للسوق"""
     key = "market_sentiment"
     cached = cache_get(key)
     if cached:
         return jsonify(cached)
-
     try:
         result = news_analyzer.get_market_sentiment()
         cache_set(key, result, minutes=30)
@@ -563,9 +516,7 @@ def get_market_sentiment():
 
 @app.route('/api/news/sector/<sector>')
 def get_sector_news(sector):
-    """جلب أخبار القطاع"""
     limit = int(request.args.get('limit', 5))
-
     try:
         result = news_analyzer.get_sector_news(sector, limit)
         return jsonify(result)
@@ -574,9 +525,7 @@ def get_sector_news(sector):
 
 @app.route('/api/news/earnings/<symbol>')
 def get_earnings_calendar(symbol):
-    """جلب تقويم الأرباح"""
     sym = symbol.upper().replace('.SR', '')
-
     try:
         result = news_analyzer.get_earnings_calendar(sym)
         return jsonify(result)
@@ -585,9 +534,7 @@ def get_earnings_calendar(symbol):
 
 @app.route('/api/news/insider/<symbol>')
 def get_insider_sentiment(symbol):
-    """جلب مشاعر التداول الداخلي"""
     sym = symbol.upper().replace('.SR', '')
-
     try:
         result = news_analyzer.get_insider_sentiment(sym)
         return jsonify(result)
@@ -595,20 +542,17 @@ def get_insider_sentiment(symbol):
         return jsonify({'error': str(e)})
 
 # ═══════════════════════════════════════════════════════════
-# ═══ المرحلة الثانية: Multi-Timeframe API ═════════════════
+# ═══ Multi-Timeframe API ═══════════════════════════════════
 # ═══════════════════════════════════════════════════════════
 
 @app.route('/api/multi-timeframe/<symbol>')
 def get_multi_timeframe(symbol):
-    """تحليل متعدد الفريمات الزمنية"""
     sym = symbol.upper().replace('.SR', '')
     mkt = 'saudi' if sym.isdigit() else 'us'
-
     key = f"mtf_{sym}_{mkt}"
     cached = cache_get(key)
     if cached:
         return jsonify(cached)
-
     try:
         result = mtf_analyzer.analyze_all_timeframes(sym, mkt)
         cache_set(key, result, minutes=20)
@@ -617,21 +561,18 @@ def get_multi_timeframe(symbol):
         return jsonify({'error': str(e)})
 
 # ═══════════════════════════════════════════════════════════
-# ═══ المرحلة الثانية: Alerts API ══════════════════════════
+# ═══ Alerts API ════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════
 
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
-    """جلب قائمة التنبيهات"""
     symbol = request.args.get('symbol')
     active_only = request.args.get('active_only', 'false').lower() == 'true'
     return jsonify(alert_system.get_alerts(symbol, active_only))
 
 @app.route('/api/alerts', methods=['POST'])
 def create_alert():
-    """إنشاء تنبيه جديد"""
     data = request.get_json() or {}
-
     alert = alert_system.add_alert(
         symbol=data.get('symbol', ''),
         alert_type=data.get('alert_type', 'price_above'),
@@ -645,13 +586,11 @@ def create_alert():
 
 @app.route('/api/alerts/<alert_id>', methods=['DELETE'])
 def delete_alert(alert_id):
-    """حذف تنبيه"""
     alert_system.remove_alert(alert_id)
     return jsonify({'success': True})
 
 @app.route('/api/alerts/<alert_id>/toggle', methods=['POST'])
 def toggle_alert(alert_id):
-    """تفعيل/تعطيل تنبيه"""
     alert = alert_system.toggle_alert(alert_id)
     if alert:
         return jsonify(alert)
@@ -659,45 +598,35 @@ def toggle_alert(alert_id):
 
 @app.route('/api/alerts/smart', methods=['POST'])
 def create_smart_alerts():
-    """إنشاء تنبيهات ذكية"""
     data = request.get_json() or {}
     symbol = data.get('symbol', '')
-    market = data.get('market', 'us')
-
     sym = symbol.upper().replace('.SR', '')
     mkt = 'saudi' if sym.isdigit() else 'us'
-
     stock_data = fetcher.get_stock_data(sym, mkt)
     if not stock_data:
         return jsonify({'error': 'تعذّر جلب البيانات'})
-
     analysis = analyzer.full_analysis(stock_data['prices'])
-
     alerts = alert_system.create_smart_alerts(sym, mkt, stock_data, analysis)
     return jsonify({'alerts_created': alerts, 'count': len(alerts)})
 
 @app.route('/api/alerts/stats')
 def get_alert_stats():
-    """إحصائيات التنبيهات"""
     return jsonify(alert_system.get_alert_stats())
 
 @app.route('/api/alerts/history')
 def get_alert_history():
-    """سجل التنبيهات"""
     symbol = request.args.get('symbol')
     limit = int(request.args.get('limit', 50))
     return jsonify(alert_system.get_alert_history(symbol, limit))
 
 # ═══════════════════════════════════════════════════════════
-# ═══ المرحلة الثانية: Combined Analysis API ═══════════════
+# ═══ Full Analysis API ═════════════════════════════════════
 # ═══════════════════════════════════════════════════════════
 
 @app.route('/api/full-analysis/<symbol>')
 def full_analysis(symbol):
-    """تحليل شامل يجمع كل الميزات"""
     sym = symbol.upper().replace('.SR', '')
     mkt = 'saudi' if sym.isdigit() else 'us'
-
     key = f"full_analysis_{sym}_{mkt}"
     cached = cache_get(key)
     if cached:
@@ -708,38 +637,21 @@ def full_analysis(symbol):
         return jsonify({'error': 'تعذّر جلب البيانات'})
 
     try:
-        # Technical Analysis
         analysis = analyzer.full_analysis(data['prices'])
         rec = analyzer.get_recommendation(analysis)
-
-        # Risk Analysis
         risk = risk_manager.calculate_risk_reward(
-            data['current'],
-            analysis['targets']['target_1'],
-            analysis['targets']['stop_loss']
+            data['current'], analysis['targets']['target_1'], analysis['targets']['stop_loss']
         )
-
-        # Position Size Recommendation
         position_size = risk_manager.calculate_position_size(
             10000, data['current'], analysis['targets']['stop_loss']
         )
-
-        # News
         news = news_analyzer.get_news(sym, mkt, limit=5)
-
-        # Multi-timeframe
         mtf = mtf_analyzer.analyze_all_timeframes(sym, mkt)
-
-        # Backtest (quick SMA cross)
-        backtest = backtester.run_backtest(data['prices'], strategy='sma_cross', 
-                                           initial_capital=10000)
-
-        # Market Sentiment
+        backtest = backtester.run_backtest(data['prices'], strategy='sma_cross', initial_capital=10000)
         market_sentiment = news_analyzer.get_market_sentiment()
 
         result = {
-            'symbol': sym,
-            'market': mkt,
+            'symbol': sym, 'market': mkt,
             'price_data': safe_data(data),
             'technical_analysis': {
                 'indicators': analysis['indicators'],
@@ -750,10 +662,7 @@ def full_analysis(symbol):
                 'targets': analysis['targets'],
             },
             'recommendation': rec,
-            'risk_analysis': {
-                'risk_reward': risk,
-                'position_size': position_size,
-            },
+            'risk_analysis': {'risk_reward': risk, 'position_size': position_size},
             'news_sentiment': news,
             'market_sentiment': market_sentiment,
             'multi_timeframe': mtf,
