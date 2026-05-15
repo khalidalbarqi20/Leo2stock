@@ -2,7 +2,6 @@ import numpy as np
 from datetime import datetime
 
 class MultiTimeframeAnalyzer:
-    """تحليل متعدد الفريمات الزمنية"""
 
     TIMEFRAMES = {
         '1d': {'label': 'يومي', 'days': 1, 'description': 'اتجاه قصير المدى'},
@@ -14,12 +13,6 @@ class MultiTimeframeAnalyzer:
         self.fetcher = data_fetcher
 
     def analyze_all_timeframes(self, symbol, market='us'):
-        """
-        تحليل السهم في جميع الفريمات الزمنية
-
-        Returns:
-            dict: نتائج التحليل لكل فريم
-        """
         results = {}
 
         for tf_key, tf_info in self.TIMEFRAMES.items():
@@ -28,13 +21,10 @@ class MultiTimeframeAnalyzer:
                     data = self.fetcher.get_stock_data(symbol, market)
                     if not data:
                         continue
-
-                    # Aggregate data for higher timeframes
                     if tf_key == '1d':
                         prices = data['prices']
                     else:
                         prices = self._aggregate_timeframe(data['prices'], tf_key)
-
                     analysis = self._analyze_timeframe(prices, tf_key)
                     results[tf_key] = {
                         'timeframe': tf_info['label'],
@@ -42,7 +32,6 @@ class MultiTimeframeAnalyzer:
                         **analysis
                     }
                 else:
-                    # Without fetcher, generate synthetic analysis
                     results[tf_key] = self._generate_synthetic_analysis(symbol, tf_key, tf_info)
             except Exception as e:
                 results[tf_key] = {
@@ -51,7 +40,6 @@ class MultiTimeframeAnalyzer:
                     'trend': 'unknown'
                 }
 
-        # Calculate confluence score
         confluence = self._calculate_confluence(results)
 
         return {
@@ -63,17 +51,21 @@ class MultiTimeframeAnalyzer:
         }
 
     def _aggregate_timeframe(self, prices, timeframe):
-        """تجميع البيانات لفريم زمني أعلى"""
-        closes = list(prices['Close']) if hasattr(prices['Close'], '__iter__') else list(prices['Close']._d)
-        opens = list(prices['Open']) if hasattr(prices['Open'], '__iter__') else list(prices['Open']._d)
-        highs = list(prices['High']) if hasattr(prices['High'], '__iter__') else list(prices['High']._d)
-        lows = list(prices['Low']) if hasattr(prices['Low'], '__iter__') else list(prices['Low']._d)
-        volumes = list(prices['Volume']) if hasattr(prices['Volume'], '__iter__') else list(prices['Volume']._d)
+        def to_list(col):
+            if hasattr(col, '_d'):
+                return list(col._d)
+            return list(col)
+
+        closes = to_list(prices['Close'])
+        opens = to_list(prices['Open'])
+        highs = to_list(prices['High'])
+        lows = to_list(prices['Low'])
+        volumes = to_list(prices['Volume'])
 
         if timeframe == '1wk':
-            period = 5  # 5 trading days per week
+            period = 5
         elif timeframe == '1mo':
-            period = 21  # ~21 trading days per month
+            period = 21
         else:
             return prices
 
@@ -94,7 +86,6 @@ class MultiTimeframeAnalyzer:
                     'volume': sum(chunk_volumes)
                 })
 
-        # Convert back to FakeDF-compatible format
         from data_fetcher import FakeDF
         return FakeDF(
             [d['open'] for d in aggregated],
@@ -106,18 +97,15 @@ class MultiTimeframeAnalyzer:
         )
 
     def _analyze_timeframe(self, prices, tf_key):
-        """تحليل فريم زمني واحد"""
-        closes = list(prices['Close']) if hasattr(prices['Close'], '__iter__') else list(prices['Close']._d)
+        col = prices['Close']
+        closes = list(col._d) if hasattr(col, '_d') else list(col)
         if not closes:
             return {'trend': 'unknown'}
 
         current = closes[-1]
-
-        # Calculate SMAs
         sma20 = sum(closes[-20:]) / 20 if len(closes) >= 20 else sum(closes) / len(closes)
         sma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else sma20
 
-        # Trend determination
         if current > sma20 > sma50:
             trend = 'bullish'
             trend_strength = 'strong' if current > sma20 * 1.05 else 'moderate'
@@ -134,15 +122,11 @@ class MultiTimeframeAnalyzer:
             trend = 'neutral'
             trend_strength = 'none'
 
-        # Calculate RSI
         rsi = self._calculate_rsi(closes)
-
-        # Support and resistance
         recent = closes[-20:] if len(closes) >= 20 else closes
         support = min(recent)
         resistance = max(recent)
 
-        # Momentum
         if len(closes) >= 10:
             momentum = ((closes[-1] - closes[-10]) / closes[-10]) * 100
         else:
@@ -162,10 +146,8 @@ class MultiTimeframeAnalyzer:
         }
 
     def _calculate_rsi(self, closes, period=14):
-        """حساب RSI"""
         if len(closes) < period + 1:
             return 50
-
         gains = []
         losses = []
         for i in range(1, period + 1):
@@ -174,16 +156,13 @@ class MultiTimeframeAnalyzer:
                 gains.append(diff)
             else:
                 losses.append(abs(diff))
-
         avg_gain = sum(gains) / period if gains else 0.001
         avg_loss = sum(losses) / period if losses else 0.001
         rs = avg_gain / avg_loss
         return 100 - (100 / (1 + rs))
 
     def _generate_signal(self, trend, rsi, momentum):
-        """توليد إشارة بناءً على التحليل"""
         score = 0
-
         if trend == 'bullish':
             score += 2
         elif trend == 'bullish_weak':
@@ -219,15 +198,11 @@ class MultiTimeframeAnalyzer:
             return {'action': 'محايد', 'score': score, 'color': 'gray'}
 
     def _generate_synthetic_analysis(self, symbol, tf_key, tf_info):
-        """توليد تحليل تركيبي"""
         hash_val = sum(ord(c) for c in symbol + tf_key)
-
         trends = ['bullish', 'bearish', 'neutral', 'bullish_weak', 'bearish_weak']
         trend = trends[hash_val % len(trends)]
-
         strengths = ['strong', 'moderate', 'weak']
         strength = strengths[hash_val % len(strengths)]
-
         base_price = 100 + (hash_val % 200)
 
         return {
@@ -246,7 +221,6 @@ class MultiTimeframeAnalyzer:
         }
 
     def _calculate_confluence(self, results):
-        """حساب درجة التوافق بين الفريمات"""
         trends = []
         for tf in ['1d', '1wk', '1mo']:
             if tf in results and 'trend' in results[tf]:
@@ -291,59 +265,40 @@ class MultiTimeframeAnalyzer:
         }
 
     def _generate_timeframe_recommendation(self, results, confluence):
-        """توليد توصية بناءً على التحليل متعدد الفريمات"""
         score = confluence['score']
-
-        # Get daily signal for additional context
         daily_signal = results.get('1d', {}).get('signal', {})
         daily_score = daily_signal.get('score', 0)
-
         combined_score = score * 0.6 + daily_score * 0.4
 
         if combined_score >= 70:
-            return {
-                'action': 'شراء قوي',
-                'confidence': 'عالية جداً',
-                'reason': 'جميع الفريمات تؤكد الاتجاه الصعودي',
-                'time_horizon': 'قصير إلى متوسط المدى',
-                'entry_strategy': 'الدخول فوراً أو عند ارتداد للدعم'
-            }
+            return {'action': 'شراء قوي', 'confidence': 'عالية جداً',
+                    'reason': 'جميع الفريمات تؤكد الاتجاه الصعودي',
+                    'time_horizon': 'قصير إلى متوسط المدى',
+                    'entry_strategy': 'الدخول فوراً أو عند ارتداد للدعم'}
         elif combined_score >= 30:
-            return {
-                'action': 'شراء',
-                'confidence': 'عالية',
-                'reason': 'الفريمات تدعم الاتجاه الصعودي',
-                'time_horizon': 'قصير المدى',
-                'entry_strategy': 'الدخول بحذر مع وقف خسارة'
-            }
+            return {'action': 'شراء', 'confidence': 'عالية',
+                    'reason': 'الفريمات تدعم الاتجاه الصعودي',
+                    'time_horizon': 'قصير المدى',
+                    'entry_strategy': 'الدخول بحذر مع وقف خسارة'}
         elif combined_score <= -70:
-            return {
-                'action': 'بيع قوي',
-                'confidence': 'عالية جداً',
-                'reason': 'جميع الفريمات تؤكد الاتجاه الهبوطي',
-                'time_horizon': 'فوري',
-                'entry_strategy': 'الخروج فوراً أو البحث عن فرص بيع'
-            }
+            return {'action': 'بيع قوي', 'confidence': 'عالية جداً',
+                    'reason': 'جميع الفريمات تؤكد الاتجاه الهبوطي',
+                    'time_horizon': 'فوري',
+                    'entry_strategy': 'الخروج فوراً أو البحث عن فرص بيع'}
         elif combined_score <= -30:
-            return {
-                'action': 'بيع',
-                'confidence': 'عالية',
-                'reason': 'الفريمات تدعم الاتجاه الهبوطي',
-                'time_horizon': 'قصير المدى',
-                'entry_strategy': 'تقليل المراكز أو البيع'
-            }
+            return {'action': 'بيع', 'confidence': 'عالية',
+                    'reason': 'الفريمات تدعم الاتجاه الهبوطي',
+                    'time_horizon': 'قصير المدى',
+                    'entry_strategy': 'تقليل المراكز أو البيع'}
         else:
-            return {
-                'action': 'انتظار',
-                'confidence': 'منخفضة',
-                'reason': 'عدم وضوح الاتجاه بين الفريمات المختلفة',
-                'time_horizon': 'غير محدد',
-                'entry_strategy': 'الانتظار حتى ظهور توافق واضح'
-            }
+            return {'action': 'انتظار', 'confidence': 'منخفضة',
+                    'reason': 'عدم وضوح الاتجاه بين الفريمات المختلفة',
+                    'time_horizon': 'غير محدد',
+                    'entry_strategy': 'الانتظار حتى ظهور توافق واضح'}
 
     def get_timeframe_chart_data(self, prices, timeframe='1d'):
-        """إعداد بيانات الرسم البياني للفريم الزمني"""
-        closes = list(prices['Close']) if hasattr(prices['Close'], '__iter__') else list(prices['Close']._d)
+        col = prices['Close']
+        closes = list(col._d) if hasattr(col, '_d') else list(col)
 
         if timeframe == '1wk':
             period = 5
@@ -358,7 +313,6 @@ class MultiTimeframeAnalyzer:
             if chunk:
                 aggregated_closes.append(sum(chunk) / len(chunk))
 
-        # Calculate SMAs for aggregated data
         sma20 = []
         sma50 = []
         for i in range(len(aggregated_closes)):
@@ -371,16 +325,11 @@ class MultiTimeframeAnalyzer:
             else:
                 sma50.append(None)
 
-        return {
-            'prices': aggregated_closes,
-            'sma20': sma20,
-            'sma50': sma50,
-            'timeframe': timeframe
-        }
+        return {'prices': aggregated_closes, 'sma20': sma20, 'sma50': sma50, 'timeframe': timeframe}
 
     def _get_daily_chart_data(self, prices):
-        """بيانات الرسم البياني اليومي"""
-        closes = list(prices['Close']) if hasattr(prices['Close'], '__iter__') else list(prices['Close']._d)
+        col = prices['Close']
+        closes = list(col._d) if hasattr(col, '_d') else list(col)
 
         sma20 = []
         sma50 = []
@@ -394,9 +343,4 @@ class MultiTimeframeAnalyzer:
             else:
                 sma50.append(None)
 
-        return {
-            'prices': closes,
-            'sma20': sma20,
-            'sma50': sma50,
-            'timeframe': '1d'
-        }
+        return {'prices': closes, 'sma20': sma20, 'sma50': sma50, 'timeframe': '1d'}
