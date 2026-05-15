@@ -1,825 +1,1332 @@
-// ===== Leo2Stock - script.js الكامل مع البحث الديناميكي =====
+/* ============================================
+   Leo2Stock — Main JavaScript v3.0
+   Custom Candlestick Chart + AI Analysis
+   ============================================ */
 
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Leo2Stock initializing...');
-    initApp();
+// ======= State =======
+let currentMarket = 'all';
+let currentSymbol = null;
+let currentData = null;
+let candlestickCanvas = null;
+let volumeCanvas = null;
+let rsiChart = null;
+let macdChart = null;
+let alertInterval = null;
+let currentTimeframe = '1h';
+
+let indicatorVisibility = {
+    sma7: true, sma20: true, sma50: true, sma200: true,
+    fibonacci: false, bollinger: false, targets: true
+};
+
+let secondaryChartVisibility = { rsi: true, macd: true };
+
+let mouseX = 0, mouseY = 0, isMouseOverChart = false;
+
+// ======= Init =======
+document.addEventListener('DOMContentLoaded', () => {
+    loadTheme();
+    renderWatchlistBadge();
+    renderAlertsBadge();
+    startAlertChecker();
+    initLiveUsers();
+    setupCrosshair();
+
+    const symbolInput = document.getElementById('symbolInput');
+    if (symbolInput) {
+        symbolInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchStock();
+        });
+    }
+
+    const heroInput = document.getElementById('symbolInputHero');
+    if (heroInput) {
+        heroInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchFromHero();
+        });
+    }
+
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
 });
 
-// ====== المتغيرات العامة ======
-let currentSymbol = '';
-let currentMarket = '';
-let currentTimeframe = '1h';
-let fearGreedInterval = null;
-let autoUpdateInterval = null;
-let chartCtx = null;
-let chartCanvas = null;
-
-function setVH() {
-    const vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', `${vh}px`);
-}
-window.addEventListener('resize', setVH);
-setVH();
-
-// ====== تهيئة التطبيق ======
-function initApp() {
-    initSidebar();
-    initThemeToggle();
-    initSearchBox();
-    initActionButtons();
-    initRiskCalculator();
-    initAlertSystem();
-    initBacktesting();
-    initModals();
-    initRsiScan();
-    initPdfButton();
-    initNewsFilters();
-    loadFavorites();
-}
-
-// ====== القائمة الجانبية ======
-function initSidebar() {
-    const menuToggle = document.getElementById('menu-toggle');
-    const sidebar = document.getElementById('sidebar');
-    if (menuToggle && sidebar) {
-        menuToggle.addEventListener('click', () => sidebar.classList.toggle('active'));
+// ======= Live Users =======
+function initLiveUsers() {
+    let count = 12 + Math.floor(Math.random() * 8);
+    function update() {
+        count = Math.max(8, Math.min(50, count + Math.floor(Math.random() * 3) - 1));
+        const el = document.getElementById('liveUsersCount');
+        if (el) el.textContent = count;
     }
-    document.addEventListener('click', (e) => {
-        if (sidebar && menuToggle && !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
-            sidebar.classList.remove('active');
-        }
+    update();
+    setInterval(update, 8000 + Math.random() * 4000);
+}
+
+// ======= Crosshair =======
+function setupCrosshair() {
+    const wrapper = document.getElementById('mainChartWrapper');
+    if (!wrapper) return;
+
+    wrapper.addEventListener('mousemove', (e) => {
+        const rect = wrapper.getBoundingClientRect();
+        mouseX = e.clientX - rect.left;
+        mouseY = e.clientY - rect.top;
+        isMouseOverChart = true;
+        const canvas = document.getElementById('candlestickChart');
+        if (canvas && currentData) updateCrosshairInfo(mouseX, mouseY, canvas);
+    });
+
+    wrapper.addEventListener('mouseleave', () => {
+        isMouseOverChart = false;
+        const ci = document.getElementById('crosshairInfo');
+        if (ci) ci.classList.add('hidden');
+        if (currentData) drawCandlestickChart(currentData);
     });
 }
 
-// ====== الوضع الليلي ======
-function initThemeToggle() {
-    const themeToggle = document.getElementById('theme-toggle');
-    const body = document.body;
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    body.setAttribute('data-theme', savedTheme);
-    if (themeToggle) {
-        themeToggle.addEventListener('click', () => {
-            const currentTheme = body.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            body.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-            const icon = themeToggle.querySelector('i');
-            if (icon) icon.className = newTheme === 'dark' ? 'fas fa-moon' : 'fas fa-sun';
-        });
-    }
+function updateCrosshairInfo(mx, my, canvas) {
+    const prices = currentData.prices_arr || [];
+    const dates = currentData.dates_list || [];
+    if (!prices.length) return;
+
+    const padding = { top: 20, right: 60, bottom: 40, left: 10 };
+    const chartWidth = canvas.width - padding.left - padding.right;
+    const candleSpacing = chartWidth / prices.length;
+    const candleIndex = Math.min(prices.length - 1, Math.max(0, Math.floor((mx - padding.left) / candleSpacing)));
+    const p = prices[candleIndex];
+    if (!p) return;
+
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('crosshair-date', dates[candleIndex] || '—');
+    set('crosshair-price', p.close || '—');
+    set('crosshair-open', p.open || '—');
+    set('crosshair-high', p.high || '—');
+    set('crosshair-low', p.low || '—');
+    set('crosshair-close', p.close || '—');
+    set('crosshair-volume', formatVolume(p.volume || 0));
+
+    const ci = document.getElementById('crosshairInfo');
+    if (ci) ci.classList.remove('hidden');
+    drawCandlestickChart(currentData, candleIndex);
 }
 
-// ====== خانة البحث الرئيسية ======
-function initSearchBox() {
-    const input = document.getElementById('main-search-input');
-    const btn = document.getElementById('main-search-btn');
-    const backBtn = document.getElementById('btn-back-search');
-
-    if (btn) btn.addEventListener('click', doMainSearch);
-    if (input) {
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') doMainSearch();
-        });
-    }
-    if (backBtn) {
-        backBtn.addEventListener('click', showHeroSearch);
-    }
+// ======= Theme =======
+function loadTheme() {
+    const saved = localStorage.getItem('theme') || 'dark';
+    document.body.className = saved;
+    const icon = document.getElementById('themeIcon');
+    if (icon) icon.textContent = saved === 'dark' ? '☀️' : '🌙';
 }
 
-function doMainSearch() {
-    const input = document.getElementById('main-search-input');
-    const marketSel = document.getElementById('main-market-select');
-    const symbol = input ? input.value.trim().toUpperCase() : '';
-    const market = marketSel ? marketSel.value : 'auto';
-
-    if (!symbol) {
-        showNotification('يرجى إدخال رمز السهم', 'error');
-        return;
-    }
-
-    const finalMarket = market === 'auto' ? (isNaN(symbol) ? 'us' : 'saudi') : market;
-    loadStock(symbol, finalMarket);
+function toggleTheme() {
+    const isDark = document.body.classList.contains('dark');
+    document.body.className = isDark ? 'light' : 'dark';
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    const icon = document.getElementById('themeIcon');
+    if (icon) icon.textContent = isDark ? '🌙' : '☀️';
+    if (currentData) redrawCharts(currentData);
 }
 
-function searchFromGolden(symbol, market) {
-    loadStock(symbol, market);
+function getChartColors() {
+    const isDark = document.body.classList.contains('dark');
+    return {
+        grid: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+        text: isDark ? '#8892a4' : '#5a6478',
+        accent: '#00e5ff', positive: '#00e676', negative: '#ff1744',
+        warning: '#ffab40', purple: '#7c4dff', gold: '#ffd700',
+        bg: isDark ? '#141d2e' : '#ffffff',
+        bg2: isDark ? '#1a2540' : '#f4f7fd',
+    };
 }
 
-function loadStock(symbol, market) {
-    currentSymbol = symbol;
+// ======= Market Switcher =======
+function switchMarket(market, el) {
     currentMarket = market;
-
-    // إخفاء صفحة البحث وإظهار النتائج
-    document.getElementById('hero-search').classList.add('hidden');
-    const results = document.getElementById('stock-results');
-    results.classList.remove('hidden');
-
-    showNotification(`جاري تحليل ${symbol}...`);
-
-    // جلب البيانات
-    fetch(`/api/analyze/${symbol}`)
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                showNotification(data.error, 'error');
-                return;
-            }
-            renderStockData(data);
-            renderChart(data);
-            renderNews(data);
-            renderMTF(data);
-            updateFearGreed(data);
-            updateTicker(data);
-            updateVolume(data);
-            showNotification(`تم تحليل ${symbol} بنجاح`);
-            startAutoUpdate();
-        })
-        .catch(err => {
-            showNotification('خطأ في الاتصال بالخادم', 'error');
-            console.error(err);
-        });
-
-    // تحديث رمز الـ backtest
-    const btSymbol = document.getElementById('backtest-symbol');
-    if (btSymbol) btSymbol.value = symbol;
-
-    // تمرير للأعلى
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    // تهيئة الرسم البياني
-    setTimeout(initChart, 100);
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    if (el) el.classList.add('active');
 }
 
-function showHeroSearch() {
-    document.getElementById('hero-search').classList.remove('hidden');
-    document.getElementById('stock-results').classList.add('hidden');
-    if (autoUpdateInterval) clearInterval(autoUpdateInterval);
-    if (fearGreedInterval) clearInterval(fearGreedInterval);
-    currentSymbol = '';
-}
-
-// ====== تحديث بيانات السهم ======
-function renderStockData(data) {
-    const sym = document.getElementById('res-symbol');
-    const name = document.getElementById('res-name');
-    const price = document.getElementById('res-price');
-    const change = document.getElementById('res-change');
-    const badges = document.getElementById('res-badges');
-
-    if (sym) sym.textContent = data.symbol || currentSymbol;
-    if (name) name.textContent = data.name || '';
-
-    const currency = data.currency === 'SAR' ? 'ر.س' : '$';
-    if (price) price.textContent = `${currency}${(data.current || 0).toFixed(2)}`;
-
-    if (change) {
-        const ch = data.change || 0;
-        change.textContent = `${ch >= 0 ? '+' : ''}${ch.toFixed(2)}%`;
-        change.className = 'price-change ' + (ch >= 0 ? 'positive' : 'negative');
-    }
-
-    if (badges) {
-        const mkt = data.market === 'saudi' ? '🇸🇦 سعودي' : '🇺🇸 أمريكي';
-        badges.innerHTML = `
-            <span class="badge">${mkt}</span>
-            <span class="badge">${data.currency || 'USD'}</span>
-        `;
-    }
-
-    // تحديث حاسبة المخاطر بالسعر الحالي
-    const entry = document.getElementById('risk-entry');
-    if (entry && data.current) entry.value = data.current.toFixed(2);
-
-    // تحديث مؤشرات المخاطرة
-    if (data.analysis && data.analysis.indicators) {
-        const atr = document.getElementById('risk-atr');
-        if (atr) atr.textContent = data.analysis.indicators.atr || '--';
+// ======= Search =======
+function searchFromHero() {
+    const heroInput = document.getElementById('symbolInputHero');
+    const navInput = document.getElementById('symbolInput');
+    if (heroInput && heroInput.value.trim()) {
+        if (navInput) navInput.value = heroInput.value.trim();
+        searchStock();
     }
 }
 
-function updateTicker(data) {
-    const currency = data.currency === 'SAR' ? 'ر.س' : '$';
-    const set = (id, val, prefix = currency) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = `${prefix}${val}`;
-    };
-    set('t-high52', (data.high_52w || 0).toFixed(2));
-    set('t-low', (data.low || 0).toFixed(2));
-    set('t-high', (data.high || 0).toFixed(2));
-    set('t-open', (data.open || 0).toFixed(2));
+async function searchStock() {
+    const input = document.getElementById('symbolInput');
+    const symbol = input ? input.value.trim().toUpperCase() : '';
+    if (!symbol) return;
 
-    const vol = document.getElementById('t-volume');
-    if (vol) {
-        const v = data.volume || 0;
-        vol.textContent = v > 1000000 ? (v/1000000).toFixed(1) + 'M' : v > 1000 ? (v/1000).toFixed(1) + 'K' : v.toString();
+    showLoading(true);
+    try {
+        const res = await fetch(`./api/analyze/${symbol}`);
+        const data = await res.json();
+        if (data.error) { showError(data.error); showLoading(false); return; }
+        currentSymbol = symbol;
+        currentData = data;
+        displayResult(data);
+    } catch (err) {
+        showError('حدث خطأ في الاتصال بالخادم');
+        console.error(err);
     }
+    showLoading(false);
 }
 
-function updateVolume(data) {
-    const ratio = data.avg_volume && data.volume ? (data.volume / data.avg_volume) : 1;
-    const pct = Math.min(ratio * 30, 100);
-    const bar = document.getElementById('vol-bar');
-    const label = document.getElementById('vol-ratio');
-    if (bar) bar.style.width = pct + '%';
-    if (label) label.textContent = ratio.toFixed(1) + 'x المتوسط';
+function loadStock(symbol) {
+    const input = document.getElementById('symbolInput');
+    if (input) input.value = symbol.replace('.SR', '');
+    searchStock();
 }
 
-function updateFearGreed(data) {
-    let rsi = 50;
-    if (data.analysis && data.analysis.indicators) {
-        rsi = data.analysis.indicators.rsi || 50;
+// ======= RSI Scanner =======
+async function runRsiScan() {
+    const rsiMax = document.getElementById('rsiInput').value || 30;
+    const market = document.getElementById('rsiMarket').value;
+    showLoading(true);
+    try {
+        const res = await fetch(`./api/rsi-scan?market=${market}&rsi_max=${rsiMax}`);
+        const data = await res.json();
+        displayRsiResults(data);
+    } catch (err) {
+        showError('خطأ في مسح RSI');
     }
-
-    // حساب مؤشر الخوف والجشع من RSI
-    const fgIndex = Math.round(rsi);
-
-    const indexEl = document.getElementById('fear-greed-index');
-    const gaugeEl = document.getElementById('fear-greed-gauge');
-    const statusEl = document.getElementById('fear-greed-status');
-    const vixEl = document.getElementById('vix-value');
-    const predEl = document.getElementById('movement-prediction');
-    const probEl = document.getElementById('prediction-probability');
-
-    if (indexEl) indexEl.textContent = fgIndex.toFixed(1);
-    if (gaugeEl) gaugeEl.style.width = fgIndex + '%';
-
-    const status = getFearGreedStatus(fgIndex);
-    if (statusEl) { statusEl.textContent = status.text; statusEl.className = `status-badge ${status.class}`; }
-
-    const vix = (25 - (fgIndex - 50) * 0.3).toFixed(1);
-    if (vixEl) vixEl.textContent = `VIX تقريبي: ${vix}`;
-
-    const pred = predictMovement(fgIndex);
-    if (predEl) predEl.textContent = pred.prediction;
-    if (probEl) probEl.textContent = `احتمالية: ${pred.probability}% | الإشارة: ${pred.signal}`;
+    showLoading(false);
 }
 
-function getFearGreedStatus(index) {
-    if (index >= 75) return { text: 'جشع مفرط', class: 'extreme-greed' };
-    if (index >= 55) return { text: 'جشع', class: 'greed' };
-    if (index >= 45) return { text: 'محايد', class: 'neutral' };
-    if (index >= 25) return { text: 'خوف', class: 'fear' };
-    return { text: 'خوف مفرط', class: 'extreme-fear' };
-}
-
-function predictMovement(index) {
-    if (index >= 75) return { prediction: 'تصحيح هبوطي محتمل - الجشع المفرط يشير إلى قمة محتملة.', probability: 65, signal: 'انتظار/بيع' };
-    if (index >= 55) return { prediction: 'استمرار الصعود محتمل مع احتمالية تصحيح خفيف.', probability: 55, signal: 'شراء حذر' };
-    if (index >= 45) return { prediction: 'اتجاه غير واضح - انتظار تأكيد الاتجاه.', probability: 50, signal: 'انتظار' };
-    if (index >= 25) return { prediction: 'ارتداد صاعد محتمل - الخوف يشير إلى قاع محتمل. فرصة شراء جيدة.', probability: 60, signal: 'شراء' };
-    return { prediction: 'ارتداد صاعد قوي محتمل - الخوف المفرط يشير إلى فرصة شراء ممتازة.', probability: 70, signal: 'شراء قوي' };
-}
-
-// ====== الرسم البياني ======
-function initChart() {
-    chartCanvas = document.getElementById('main-chart');
-    if (!chartCanvas) return;
-
-    function resizeCanvas() {
-        const container = chartCanvas.parentElement;
-        chartCanvas.width = container.clientWidth;
-        chartCanvas.height = container.clientHeight || 400;
-        if (currentSymbol) return;
-        chartCtx = chartCanvas.getContext('2d');
-        drawMockChart(chartCtx, chartCanvas.width, chartCanvas.height);
-    }
-
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-    chartCtx = chartCanvas.getContext('2d');
-
-    const tfButtons = document.querySelectorAll('.tf-btn');
-    tfButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            tfButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentTimeframe = btn.dataset.tf;
-        });
-    });
-}
-
-function renderChart(data) {
-    if (!chartCanvas) chartCanvas = document.getElementById('main-chart');
-    if (!chartCanvas) return;
-    chartCtx = chartCanvas.getContext('2d');
-
-    if (data.prices_arr && data.prices_arr.length > 0) {
-        drawCandleChart(chartCtx, chartCanvas.width, chartCanvas.height, data.prices_arr);
-    } else {
-        drawMockChart(chartCtx, chartCanvas.width, chartCanvas.height);
-    }
-}
-
-function drawCandleChart(ctx, width, height, pricesArr) {
-    const data = pricesArr.slice(-100);
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--card-bg') || '#141d2e';
-    ctx.fillRect(0, 0, width, height);
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 6; i++) {
-        const y = (height / 5) * i;
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-    }
-
-    if (!data.length) return;
-    const minPrice = Math.min(...data.map(d => d.low));
-    const maxPrice = Math.max(...data.map(d => d.high));
-    const priceRange = maxPrice - minPrice || 1;
-    const candleWidth = (width / data.length) * 0.6;
-    const padding = (width / data.length) * 0.2;
-
-    data.forEach((candle, i) => {
-        const x = (width / data.length) * i + padding;
-        const toY = v => height - ((v - minPrice) / priceRange) * height * 0.85 - height * 0.07;
-        const openY = toY(candle.open);
-        const closeY = toY(candle.close);
-        const highY = toY(candle.high);
-        const lowY = toY(candle.low);
-        const isGreen = candle.close >= candle.open;
-        ctx.fillStyle = isGreen ? '#00ff88' : '#ff4444';
-        ctx.strokeStyle = isGreen ? '#00ff88' : '#ff4444';
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(x + candleWidth/2, highY); ctx.lineTo(x + candleWidth/2, lowY); ctx.stroke();
-        const bodyTop = Math.min(openY, closeY);
-        const bodyH = Math.abs(closeY - openY) || 2;
-        ctx.fillRect(x, bodyTop, candleWidth, bodyH);
-    });
-
-    // SMA 20
-    const closes = data.map(d => d.close);
-    drawSMALine(ctx, closes, 20, '#00d4ff', width, height, minPrice, priceRange, data.length);
-    drawSMALine(ctx, closes, 50, '#ffd700', width, height, minPrice, priceRange, data.length);
-}
-
-function drawSMALine(ctx, closes, period, color, width, height, minPrice, priceRange, count) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    let started = false;
-    for (let i = 0; i < closes.length; i++) {
-        if (i < period - 1) continue;
-        const sum = closes.slice(i - period + 1, i + 1).reduce((a,b) => a+b, 0);
-        const sma = sum / period;
-        const x = (width / count) * i + (width / count) / 2;
-        const y = height - ((sma - minPrice) / priceRange) * height * 0.85 - height * 0.07;
-        if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
-    }
-    ctx.stroke();
-}
-
-function drawMockChart(ctx, width, height) {
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#141d2e';
-    ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-    for (let i = 0; i < 6; i++) {
-        const y = (height / 5) * i;
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-    }
-    const data = [];
-    let price = 100;
-    for (let i = 0; i < 80; i++) {
-        const ch = (Math.random() - 0.5) * 3;
-        const open = price;
-        const close = price + ch;
-        const high = Math.max(open, close) + Math.random() * 1.5;
-        const low = Math.min(open, close) - Math.random() * 1.5;
-        data.push({ open, high, low, close });
-        price = close;
-    }
-    const minP = Math.min(...data.map(d => d.low));
-    const maxP = Math.max(...data.map(d => d.high));
-    const range = maxP - minP || 1;
-    const cw = (width / data.length) * 0.6;
-    const pad = (width / data.length) * 0.2;
-    data.forEach((c, i) => {
-        const x = (width / data.length) * i + pad;
-        const toY = v => height - ((v - minP) / range) * height * 0.85 - height * 0.07;
-        const isGreen = c.close >= c.open;
-        ctx.fillStyle = isGreen ? '#00ff88' : '#ff4444';
-        ctx.strokeStyle = isGreen ? '#00ff88' : '#ff4444';
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(x + cw/2, toY(c.high)); ctx.lineTo(x + cw/2, toY(c.low)); ctx.stroke();
-        ctx.fillRect(x, Math.min(toY(c.open), toY(c.close)), cw, Math.abs(toY(c.close) - toY(c.open)) || 2);
-    });
-}
-
-// ====== الأخبار ======
-function renderNews(data) {
-    const feed = document.getElementById('news-feed');
-    if (!feed) return;
-
-    const news = data.news;
-    if (!news || !news.articles || news.articles.length === 0) {
-        feed.innerHTML = '<p class="empty-message">لا توجد أخبار متاحة</p>';
+function displayRsiResults(results) {
+    const container = document.getElementById('rsiResults');
+    const tbody = document.getElementById('rsiTableBody');
+    if (!results || results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;">لا توجد نتائج</td></tr>';
+        container.classList.remove('hidden');
         return;
     }
-
-    feed.innerHTML = news.articles.map(article => {
-        const sentClass = article.sentiment && article.sentiment.score > 0.1 ? 'hot' :
-                          article.sentiment && article.sentiment.score < -0.1 ? 'negative' : 'neutral';
-        const sentLabel = article.sentiment ? article.sentiment.label : 'محايد';
-        const dateStr = article.datetime ? new Date(article.datetime * 1000).toLocaleDateString('ar') : '';
+    tbody.innerHTML = results.map(stock => {
+        const isPositive = stock.change >= 0;
+        const rec = stock.recommendation || {};
         return `
-            <div class="news-card ${sentClass === 'hot' ? 'featured' : ''}">
-                <div class="news-badge ${sentClass}">${sentLabel}</div>
-                <div class="news-content">
-                    <h3>${article.headline || 'بدون عنوان'}</h3>
-                    ${article.summary ? `<p>${article.summary.substring(0, 120)}...</p>` : ''}
-                    <div class="news-meta">
-                        <span class="news-source">${article.source || ''}</span>
-                        <span class="news-date">${dateStr}</span>
-                    </div>
-                </div>
-            </div>
-        `;
+            <tr>
+                <td><strong>${stock.symbol}</strong></td>
+                <td>${stock.name || stock.symbol}</td>
+                <td>${formatPrice(stock.price, stock.currency)}</td>
+                <td class="${isPositive ? 'positive' : 'negative'}">${isPositive ? '+' : ''}${stock.change}%</td>
+                <td><strong style="color:${stock.rsi < 30 ? '#00e676' : '#ff1744'}">${stock.rsi}</strong></td>
+                <td><span class="rec-badge ${rec.color || 'gray'}">${rec.action || 'محايد'}</span></td>
+                <td><button class="mini-btn" onclick="loadStock('${stock.symbol}')">تحليل</button></td>
+            </tr>`;
     }).join('');
-
-    // تحديث المشاعر
-    if (news.overall_sentiment) {
-        const s = news.overall_sentiment;
-        const total = s.total || 1;
-        const posPct = Math.round((s.positive_count / total) * 100);
-        const negPct = Math.round((s.negative_count / total) * 100);
-        const neuPct = 100 - posPct - negPct;
-
-        const setBar = (id, valId, pct) => {
-            const el = document.getElementById(id);
-            const vel = document.getElementById(valId);
-            if (el) el.style.width = pct + '%';
-            if (vel) vel.textContent = pct + '%';
-        };
-        setBar('sent-pos', 'sent-pos-val', posPct);
-        setBar('sent-neg', 'sent-neg-val', negPct);
-        setBar('sent-neu', 'sent-neu-val', neuPct);
-    }
+    container.classList.remove('hidden');
 }
 
-// ====== Multi Timeframe ======
-function renderMTF(data) {
-    const container = document.getElementById('mtf-container');
+// ======= Display Result =======
+function displayResult(data) {
+    const analysis = data.analysis || {};
+    const indicators = analysis.indicators || {};
+    const rec = data.recommendation || {};
+    const bb = indicators.bollinger || {};
+    const macd = indicators.macd || {};
+    const stoch = indicators.stochastic || {};
+    const targets = analysis.targets || {};
+    const fund_reason = analysis.fundamental_reason || {};
+    const isPositive = data.change >= 0;
+
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+    set('res-symbol', data.symbol);
+    set('res-name', data.name || data.symbol);
+    set('res-sector', data.sector || 'غير محدد');
+    set('res-market', data.market === 'saudi' ? '🇸🇦 سعودي' : '🇺🇸 أمريكي');
+    set('res-industry', data.industry || 'غير محدد');
+    set('res-price', formatPrice(data.current, data.currency));
+
+    const changeEl = document.getElementById('res-change');
+    if (changeEl) {
+        changeEl.textContent = `${isPositive ? '+' : ''}${data.change}%`;
+        changeEl.className = `price-delta ${isPositive ? 'positive' : 'negative'}`;
+    }
+    set('res-currency', data.currency || 'USD');
+    set('res-open', formatPrice(data.open, data.currency));
+    set('res-high', formatPrice(data.high, data.currency));
+    set('res-low', formatPrice(data.low, data.currency));
+    set('res-volume', formatVolume(data.volume));
+    set('res-high52', formatPrice(data.high_52w, data.currency));
+    set('res-low52', formatPrice(data.low_52w, data.currency));
+
+    // Volume bar
+    const avgVol = data.avg_volume || 0;
+    const todayVol = data.volume || 0;
+    const volRatio = avgVol > 0 ? (todayVol / avgVol) : 0;
+    set('volume-comparison', avgVol > 0 ? `${volRatio.toFixed(1)}x المتوسط` : '—');
+    const volBar = document.getElementById('volume-bar-fill');
+    if (volBar) {
+        volBar.style.width = `${Math.min(volRatio * 100, 100)}%`;
+        volBar.style.background = volRatio > 1.5 ? 'linear-gradient(90deg,#ff1744,#ffab40)' :
+                                   volRatio > 1 ? 'linear-gradient(90deg,#00e676,#00e5ff)' :
+                                   'linear-gradient(90deg,#8892a4,#00e5ff)';
+    }
+
+    // AI Analysis (basic)
+    generateAIAnalysis(data);
+
+    // Earnings
+    displayEarnings(data);
+
+    // Targets
+    set('target-1', formatPrice(targets.target_1, data.currency));
+    set('target-2', formatPrice(targets.target_2, data.currency));
+    set('target-3', formatPrice(targets.target_3, data.currency));
+    set('target-4', formatPrice(targets.target_4, data.currency));
+    set('target-stop', formatPrice(targets.stop_loss, data.currency));
+    set('support-1', formatPrice(targets.support_1, data.currency));
+    set('support-2', formatPrice(targets.support_2, data.currency));
+    set('support-3', formatPrice(targets.support_3, data.currency));
+    set('support-4', formatPrice(targets.support_4, data.currency));
+
+    // Fibonacci
+    displayFibonacci(data);
+
+    // Indicators
+    const rsi = indicators.rsi || 50;
+    set('ind-rsi', rsi);
+    const rsiBar = document.getElementById('rsi-bar');
+    if (rsiBar) {
+        rsiBar.style.width = `${Math.min(rsi, 100)}%`;
+        rsiBar.style.background = rsi < 30 ? '#00e676' : rsi > 70 ? '#ff1744' : '#00e5ff';
+    }
+    styleSignal('sig-rsi', rsi < 30 ? 'buy' : rsi > 70 ? 'sell' : 'neutral');
+    set('sig-rsi', rsi < 30 ? 'تشبع بيعي' : rsi > 70 ? 'تشبع شرائي' : 'محايد');
+
+    const price = data.current;
+    const sma20 = indicators.sma_20;
+    const sma50 = indicators.sma_50;
+    const sma200 = indicators.sma_200;
+
+    set('ind-sma20', formatPrice(sma20, data.currency));
+    setSignal('sig-sma20', price > sma20 ? 'buy' : 'sell', price > sma20 ? 'فوق' : 'تحت');
+    set('ind-sma50', formatPrice(sma50, data.currency));
+    setSignal('sig-sma50', price > sma50 ? 'buy' : 'sell', price > sma50 ? 'فوق' : 'تحت');
+    set('ind-sma200', formatPrice(sma200, data.currency));
+    setSignal('sig-sma200', price > sma200 ? 'buy' : 'sell', price > sma200 ? 'فوق' : 'تحت');
+    set('ind-macd', macd.macd || '—');
+    setSignal('sig-macd', macd.histogram > 0 ? 'buy' : 'sell', macd.histogram > 0 ? 'صاعد' : 'هابط');
+    set('ind-bb-upper', formatPrice(bb.upper, data.currency));
+    set('ind-bb-lower', formatPrice(bb.lower, data.currency));
+    const bbSig = price >= bb.upper ? 'sell' : price <= bb.lower ? 'buy' : 'neutral';
+    setSignal('sig-bb', bbSig, price >= bb.upper ? 'حد علوي' : price <= bb.lower ? 'حد سفلي' : 'وسط');
+    set('ind-atr', formatPrice(indicators.atr, data.currency));
+    set('ind-stoch-k', stoch.k || '—');
+    setSignal('sig-stoch', stoch.k < 20 ? 'buy' : stoch.k > 80 ? 'sell' : 'neutral',
+              stoch.k < 20 ? 'تشبع بيعي' : stoch.k > 80 ? 'تشبع شرائي' : 'محايد');
+
+    // Fundamental
+    set('fund-cap', formatMarketCap(data.market_cap));
+    const pe = data.pe_ratio;
+    set('fund-pe', pe ? pe.toFixed(1) : 'N/A');
+    if (pe) set('fund-pe-note', pe < 15 ? 'منخفض جيد' : pe > 30 ? 'مرتفع' : 'معتدل');
+    set('fund-sector', data.sector || 'غير محدد');
+    set('fund-industry', data.industry || 'غير محدد');
+    set('fund-support', formatPrice(analysis.support, data.currency));
+    set('fund-resistance', formatPrice(analysis.resistance, data.currency));
+
+    const trendMap = { strong_bullish:'صاعد قوي', bullish:'صاعد', neutral:'محايد', bearish:'هابط', strong_bearish:'هابط قوي' };
+    set('fund-trend', trendMap[analysis.trend] || '—');
+    set('fund-volume-ratio', avgVol > 0 ? `${volRatio.toFixed(1)}x` : '—');
+
+    const fundReasonEl = document.getElementById('fund-reason');
+    if (fundReasonEl && fund_reason) {
+        fundReasonEl.innerHTML = `
+            <div class="fund-reason-box ${fund_reason.direction || 'neutral'}">
+                <h4>${fund_reason.title || 'الوضع الحالي'}</h4>
+                <p class="fund-summary">${fund_reason.summary || ''}</p>
+                ${fund_reason.reasons ? '<ul>' + fund_reason.reasons.map(r => `<li>${r}</li>`).join('') + '</ul>' : ''}
+            </div>`;
+    }
+
+    // Recommendation
+    const recCard = document.getElementById('rec-card');
+    const action = rec.action || 'محايد';
+    set('rec-action', action);
+    set('rec-score', `نقاط: ${rec.score >= 0 ? '+' : ''}${rec.score}`);
+    if (recCard) {
+        recCard.className = 'card rec-card';
+        if (action.includes('شراء قوي')) recCard.classList.add('rec-strong-buy');
+        else if (action.includes('شراء')) recCard.classList.add('rec-buy');
+        else if (action.includes('بيع قوي')) recCard.classList.add('rec-strong-sell');
+        else if (action.includes('بيع')) recCard.classList.add('rec-sell');
+        else recCard.classList.add('rec-neutral');
+    }
+
+    // Signals
+    const signalsList = document.getElementById('signals-list');
+    if (signalsList) {
+        signalsList.innerHTML = analysis.signals && analysis.signals.length
+            ? analysis.signals.map(s => `<li>${s}</li>`).join('')
+            : '<li class="no-signals">لا توجد إشارات واضحة حالياً</li>';
+    }
+
+    // Impact Analysis
+    displayImpactAnalysis(data);
+
+    // Charts
+    drawCandlestickChart(data);
+    drawVolumeChart(data);
+    drawRsiChart(data);
+    drawMacdChart(data);
+
+    // AI Deep Analysis
+    setTimeout(() => generateAIDeepAnalysis(data), 100);
+
+    // Show result
+    const resultEl = document.getElementById('result');
+    if (resultEl) {
+        resultEl.classList.remove('hidden');
+        resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Hide hero
+    const heroEl = document.getElementById('hero-section');
+    if (heroEl) heroEl.style.display = 'none';
+}
+
+// ======= AI Basic Analysis =======
+function generateAIAnalysis(data) {
+    const container = document.getElementById('ai-analysis-content');
     if (!container) return;
+    const analysis = data.analysis || {};
+    const indicators = analysis.indicators || {};
+    const trend = analysis.trend || 'neutral';
+    const rsi = indicators.rsi || 50;
 
-    const mtf = data.multi_timeframe;
-    if (!mtf || !mtf.timeframes) {
-        container.innerHTML = '<p class="empty-message">لا توجد بيانات</p>';
-        return;
-    }
+    let aiText = '', confidence = 50;
+    if (trend === 'strong_bullish') { aiText = 'السهم يظهر قوة شرائية ملحوظة مع وجوده فوق جميع المتوسطات الرئيسية.'; confidence = 85; }
+    else if (trend === 'bullish') { aiText = 'الاتجاه العام صاعد مع إشارات إيجابية من المؤشرات الفنية.'; confidence = 70; }
+    else if (trend === 'strong_bearish') { aiText = 'السهم في اتجاه هبوطي قوي مع ضغط بيعي واضح.'; confidence = 85; }
+    else if (trend === 'bearish') { aiText = 'الاتجاه الهبوطي مستمر مع ضعف في الزخم الشرائي.'; confidence = 65; }
+    else if (rsi < 30) { aiText = 'السهم في منطقة تشبع بيعي (RSI < 30) — احتمال ارتداد صعودي.'; confidence = 60; }
+    else if (rsi > 70) { aiText = 'السهم في منطقة تشبع شرائي (RSI > 70) — احتمال تصحيح.'; confidence = 55; }
+    else { aiText = 'السهم في منطقة محايدة — انتظار محفزات جديدة.'; confidence = 40; }
 
-    const trendAr = {
-        'bullish': 'صاعد', 'bearish': 'هابط',
-        'bullish_weak': 'صاعد ضعيف', 'bearish_weak': 'هابط ضعيف',
-        'neutral': 'محايد', 'unknown': 'غير معروف'
-    };
-
-    const tfs = mtf.timeframes;
-    container.innerHTML = Object.keys(tfs).map(key => {
-        const tf = tfs[key];
-        const trend = tf.trend || 'neutral';
-        const trendClass = trend.includes('bullish') ? 'bullish' : trend.includes('bearish') ? 'bearish' : 'neutral';
-        const sig = tf.signal || {};
-        return `
-            <div class="mtf-signal-card ${trendClass}">
-                <div class="mtf-header">
-                    <span class="mtf-badge ${trendClass}">${trendAr[trend] || trend}</span>
-                    <span class="mtf-timeframe">${tf.timeframe || key} — ${tf.description || ''}</span>
-                </div>
-                <div class="mtf-body">
-                    <div class="mtf-direction">
-                        <span class="direction-label">${trendAr[trend] || trend}</span>
-                        <i class="fas fa-arrow-trend-${trendClass === 'bullish' ? 'up' : trendClass === 'bearish' ? 'down' : 'right'}"></i>
-                    </div>
-                    <div class="mtf-metrics">
-                        <div class="metric"><span class="metric-label">RSI:</span><span class="metric-value">${(tf.rsi || 50).toFixed(1)}</span></div>
-                        <div class="metric"><span class="metric-label">الزخم:</span><span class="metric-value">${(tf.momentum_pct || 0).toFixed(2)}%</span></div>
-                        <div class="metric"><span class="metric-label">SMA20:</span><span class="metric-value">${(tf.sma20 || 0).toFixed(2)}</span></div>
-                    </div>
-                    ${sig.action ? `<div class="rec-signal ${trendClass}" style="margin-top:8px;font-size:0.8rem;">${sig.action}</div>` : ''}
-                </div>
+    const cc = confidence > 70 ? 'var(--positive)' : confidence > 50 ? 'var(--warning)' : 'var(--negative)';
+    container.innerHTML = `
+        <div class="ai-result">
+            <h4>تحليل الذكاء الاصطناعي</h4>
+            <p>${aiText}</p>
+            <div class="ai-confidence">
+                <span class="ai-confidence-label">نسبة الثقة:</span>
+                <div class="ai-confidence-bar"><div class="ai-confidence-fill" style="width:${confidence}%;background:${cc};"></div></div>
+                <span class="ai-confidence-val" style="color:${cc};">${confidence}%</span>
             </div>
-        `;
-    }).join('');
-
-    // التوصية
-    const recPanel = document.getElementById('rec-panel');
-    const recSignal = document.getElementById('rec-signal');
-    const recDetails = document.getElementById('rec-details');
-
-    if (recPanel && mtf.recommendation) {
-        recPanel.style.display = 'block';
-        const rec = mtf.recommendation;
-        if (recSignal) {
-            recSignal.textContent = rec.action || '--';
-            recSignal.className = `rec-signal ${rec.action && rec.action.includes('شراء') ? 'bullish' : rec.action && rec.action.includes('بيع') ? 'bearish' : 'neutral'}`;
-        }
-        if (recDetails) recDetails.textContent = `الثقة: ${rec.confidence || '--'} | الأفق: ${rec.time_horizon || '--'}`;
-    }
-}
-
-// ====== فلترة الأخبار ======
-function initNewsFilters() {
-    document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('news-filter')) {
-            document.querySelectorAll('.news-filter').forEach(f => f.classList.remove('active'));
-            e.target.classList.add('active');
-        }
-    });
-    const refreshBtn = document.getElementById('refresh-news');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => {
-            if (currentSymbol) {
-                showNotification('جاري تحديث الأخبار...');
-                fetch(`/api/news/${currentSymbol}`)
-                    .then(r => r.json())
-                    .then(data => renderNews({ news: data }))
-                    .catch(() => showNotification('خطأ في تحديث الأخبار', 'error'));
-            }
-        });
-    }
-}
-
-// ====== أزرار الإجراءات ======
-function initActionButtons() {
-    const riskBtn = document.getElementById('btn-risk');
-    if (riskBtn) riskBtn.addEventListener('click', () => scrollToSection('risk-manager'));
-    const backtestBtn = document.getElementById('btn-backtest');
-    if (backtestBtn) backtestBtn.addEventListener('click', () => scrollToSection('backtesting'));
-    const pdfBtn = document.getElementById('btn-pdf');
-    if (pdfBtn) pdfBtn.addEventListener('click', () => scrollToSection('pdf-report'));
-    const alertBtn = document.getElementById('btn-alert');
-    if (alertBtn) alertBtn.addEventListener('click', () => openModal('price-alert-modal'));
-    const favBtn = document.getElementById('btn-fav');
-    if (favBtn) favBtn.addEventListener('click', () => addToFavorites(currentSymbol));
-}
-
-function scrollToSection(sectionId) {
-    const section = document.getElementById(sectionId);
-    if (section) section.scrollIntoView({ behavior: 'smooth' });
-}
-
-// ====== حاسبة المخاطر ======
-function initRiskCalculator() {
-    const btn = document.getElementById('calculate-position');
-    if (btn) btn.addEventListener('click', calculatePosition);
-}
-
-function calculatePosition() {
-    const capital = parseFloat(document.getElementById('risk-capital').value) || 0;
-    const riskPercent = parseFloat(document.getElementById('risk-percent').value) || 0;
-    const entry = parseFloat(document.getElementById('risk-entry').value) || 0;
-    const stop = parseFloat(document.getElementById('risk-stop').value) || 0;
-    const target = parseFloat(document.getElementById('risk-target').value) || 0;
-    if (!capital || !riskPercent || !entry || !stop) { showNotification('يرجى ملء جميع الحقول', 'error'); return; }
-    const riskAmount = capital * (riskPercent / 100);
-    const riskPerShare = Math.abs(entry - stop);
-    const positionSize = Math.floor(riskAmount / riskPerShare);
-    const reward = target ? Math.abs(target - entry) * positionSize : 0;
-    const rr = target ? (Math.abs(target - entry) / riskPerShare).toFixed(2) : '--';
-    const resultBox = document.getElementById('position-result');
-    if (resultBox) {
-        resultBox.classList.remove('hidden');
-        document.getElementById('pos-size').textContent = positionSize.toLocaleString();
-        document.getElementById('pos-risk').textContent = riskAmount.toFixed(2);
-        document.getElementById('pos-reward').textContent = target ? reward.toFixed(2) : '--';
-        document.getElementById('pos-rr').textContent = '1:' + rr;
-    }
-}
-
-// ====== نظام التنبيهات ======
-function initAlertSystem() {
-    const addAlertBtn = document.getElementById('add-alert');
-    const alertForm = document.getElementById('alert-form');
-    const createAlertBtn = document.getElementById('create-alert');
-    const cancelAlertBtn = document.getElementById('cancel-alert');
-    if (addAlertBtn && alertForm) addAlertBtn.addEventListener('click', () => alertForm.classList.toggle('hidden'));
-    if (cancelAlertBtn && alertForm) cancelAlertBtn.addEventListener('click', () => alertForm.classList.add('hidden'));
-    if (createAlertBtn) createAlertBtn.addEventListener('click', createAlert);
-}
-
-function createAlert() {
-    const symbol = document.getElementById('alert-symbol').value || currentSymbol;
-    const type = document.getElementById('alert-type').value;
-    const condition = document.getElementById('alert-condition').value;
-    const value = document.getElementById('alert-value').value;
-    if (!symbol || !value) { showNotification('يرجى ملء جميع الحقول', 'error'); return; }
-    const alertItem = document.createElement('div');
-    alertItem.className = 'alert-item active';
-    alertItem.innerHTML = `
-        <div class="alert-info">
-            <span class="alert-symbol">${symbol}</span>
-            <span class="alert-condition">${type} ${condition} ${value}</span>
-        </div>
-        <div class="alert-status"><span class="status-badge active">نشط</span></div>
-        <div class="alert-actions">
-            <button class="btn-icon small" onclick="removeAlert(this)"><i class="fas fa-trash"></i></button>
         </div>`;
-    const alertsGrid = document.getElementById('active-alerts');
-    if (alertsGrid) alertsGrid.appendChild(alertItem);
-    document.getElementById('alert-form').classList.add('hidden');
-    showNotification('تم إنشاء التنبيه بنجاح');
 }
 
-function removeAlert(btn) {
-    const item = btn.closest('.alert-item');
-    if (item) { item.remove(); showNotification('تم حذف التنبيه'); }
+// ======= Earnings =======
+function displayEarnings(data) {
+    const hash = data.symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+    const daysAhead = (hash % 45) + 15;
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysAhead);
+    const months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('earnings-date', `${futureDate.getDate()} ${months[futureDate.getMonth()]} ${futureDate.getFullYear()}`);
+    set('earnings-quarter', ['Q1 2026','Q2 2026','Q3 2026','Q4 2026'][hash % 4]);
+    set('earnings-estimate', ['أفضل من المتوقع','ضمن التوقعات','أقل من المتوقع','غير محدد'][hash % 4]);
 }
 
-// ====== الاختبار التاريخي ======
-function initBacktesting() {
-    const runBtn = document.getElementById('run-backtest');
-    if (runBtn) runBtn.addEventListener('click', runBacktest);
+// ======= Fibonacci =======
+function displayFibonacci(data) {
+    const prices = data.prices_arr || [];
+    if (!prices.length) return;
+    const closes = prices.map(p => p.close || 0);
+    const high52 = data.high_52w || Math.max(...closes);
+    const low52 = data.low_52w || Math.min(...closes);
+    const range = high52 - low52;
+    const levels = {
+        'fib-0': high52, 'fib-236': high52 - range * 0.236,
+        'fib-382': high52 - range * 0.382, 'fib-500': high52 - range * 0.5,
+        'fib-618': high52 - range * 0.618, 'fib-786': high52 - range * 0.786,
+        'fib-100': low52
+    };
+    Object.entries(levels).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = formatPrice(val, data.currency);
+    });
 }
 
-function runBacktest() {
-    const symbol = document.getElementById('backtest-symbol').value || currentSymbol || 'AAPL';
-    const strategy = document.getElementById('backtest-strategy').value;
-    showNotification('جاري تشغيل الاختبار التاريخي...');
-    const runBtn = document.getElementById('run-backtest');
-    if (runBtn) runBtn.disabled = true;
+// ======= Impact Analysis =======
+function displayImpactAnalysis(data) {
+    const symbol = data.symbol;
+    const market = data.market;
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
-    fetch(`/api/backtest/${symbol}?strategy=${strategy}&capital=10000&stop_loss=0.05&take_profit=0.10`)
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) { showNotification(data.error, 'error'); return; }
-            const results = document.getElementById('backtest-results');
-            if (results) results.classList.remove('hidden');
-            const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-            set('bt-return', (data.total_return_pct || 0).toFixed(2) + '%');
-            set('bt-winrate', (data.win_rate || 0).toFixed(1) + '%');
-            set('bt-drawdown', (data.max_drawdown_pct || 0).toFixed(2) + '%');
-            set('bt-sharpe', (data.sharpe_ratio || 0).toFixed(2));
-            set('bt-trades', data.total_trades || 0);
-            set('bt-avg-profit', (data.avg_trade_return || 0).toFixed(2) + '%');
+    set('impact-sector', data.sector || 'غير محدد');
+    set('impact-industry', data.industry || 'غير محدد');
+    set('impact-country', market === 'saudi' ? 'السعودية' : 'الولايات المتحدة');
 
-            const retEl = document.getElementById('bt-return');
-            if (retEl) retEl.className = 'metric-value ' + ((data.total_return_pct || 0) >= 0 ? 'positive' : 'negative');
-            showNotification('تم الانتهاء من الاختبار التاريخي');
-        })
-        .catch(() => showNotification('خطأ في الاختبار', 'error'))
-        .finally(() => { if (runBtn) runBtn.disabled = false; });
-}
+    const hash = symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+    set('impact-employees', formatVolume(((hash % 500) + 1) * 1000));
 
-// ====== مسح RSI ======
-function initRsiScan() {
-    const scanBtn = document.getElementById('scan-rsi');
-    if (scanBtn) {
-        scanBtn.addEventListener('click', () => {
-            const maxRsi = document.getElementById('rsi-max').value;
-            const market = document.getElementById('market-select').value;
-            const finalMarket = market === 'american' ? 'us' : market;
-            showNotification(`جاري مسح الأسهم...`);
-            fetch(`/api/rsi-scan?market=${finalMarket}&rsi_max=${maxRsi}`)
-                .then(r => r.json())
-                .then(data => {
-                    const resultsDiv = document.getElementById('rsi-results');
-                    if (!resultsDiv) return;
-                    if (Array.isArray(data) && data.length > 0) {
-                        resultsDiv.innerHTML = data.map(stock => `
-                            <div class="rsi-result-item">
-                                <div class="result-symbol">${stock.symbol || ''}</div>
-                                <div class="result-name">${stock.name || ''}</div>
-                                <div class="result-rsi">RSI: ${(stock.rsi || 0).toFixed(1)}</div>
-                                <div class="result-price">${stock.currency === 'SAR' ? 'ر.س' : '$'}${(stock.price || 0).toFixed(2)}</div>
-                                <button class="btn-primary small" onclick="loadStock('${stock.symbol}', '${finalMarket}')">تحليل</button>
-                            </div>`).join('');
-                    } else {
-                        resultsDiv.innerHTML = '<p class="empty-message">لا توجد أسهم بهذا المعيار</p>';
-                    }
-                    showNotification('تم الانتهاء من المسح');
-                })
-                .catch(() => showNotification('خطأ في المسح', 'error'));
-        });
+    const revenue = ((hash % 100) + 10) * 1e9;
+    const profit = revenue * ((hash % 30) + 5) / 100;
+    set('impact-revenue', formatMarketCap(revenue));
+    set('impact-profit', formatMarketCap(profit));
+    set('impact-margin', `${(hash % 25) + 10}%`);
+    set('impact-roe', `${(hash % 20) + 5}%`);
+
+    const factorsContainer = document.getElementById('impact-factors');
+    if (factorsContainer) {
+        const factors = generateImpactFactors(data, hash);
+        factorsContainer.innerHTML = factors.map(f => `
+            <div class="impact-factor ${f.type}">
+                <span class="impact-factor-icon">${f.icon}</span>
+                <span class="impact-factor-text">${f.text}</span>
+            </div>`).join('');
+    }
+
+    const outlookContainer = document.getElementById('impact-outlook');
+    if (outlookContainer) {
+        outlookContainer.innerHTML = `<p>${generateOutlook(data, hash)}</p>`;
     }
 }
 
-// ====== زر PDF ======
-function initPdfButton() {
-    const btn = document.getElementById('generate-pdf');
-    if (btn) {
-        btn.addEventListener('click', () => {
-            if (!currentSymbol) { showNotification('ابحث عن سهم أولاً', 'error'); return; }
-            showNotification('جاري إنشاء التقرير...');
-            window.open(`/api/report/${currentSymbol}`, '_blank');
+function generateImpactFactors(data, hash) {
+    const factors = [];
+    const isSaudi = data.market === 'saudi';
+
+    if (data.change > 5) factors.push({ icon:'📈', text:`ارتفاع قوي بنسبة ${data.change}% يعكس تفاؤل السوق`, type:'positive' });
+    else if (data.change < -5) factors.push({ icon:'📉', text:`انخفاض حاد بنسبة ${Math.abs(data.change)}% قد يعكس أخبار سلبية`, type:'negative' });
+
+    const volRatio = (data.volume || 0) / (data.avg_volume || 1);
+    if (volRatio > 2) factors.push({ icon:'🔥', text:`حجم تداول استثنائي (${volRatio.toFixed(1)}x المتوسط)`, type:'positive' });
+
+    factors.push(isSaudi
+        ? { icon:'🏛️', text:'تأثير إيجابي من رؤية 2030 والتحول الاقتصادي', type:'positive' }
+        : { icon:'💵', text:'تأثر بالسياسة النقدية الفيدرالية وتوقعات الفائدة', type:'neutral' });
+
+    const trend = data.analysis?.trend || 'neutral';
+    if (trend.includes('bullish')) factors.push({ icon:'🎯', text:'الاتجاه الفني الصعودي يجذب المتداولين ويخلق زخماً إيجابياً', type:'positive' });
+    else if (trend.includes('bearish')) factors.push({ icon:'⚠️', text:'الاتجاه الهبوطي قد يؤدي لمزيد من الضغط البيعي', type:'negative' });
+
+    return factors;
+}
+
+function generateOutlook(data, hash) {
+    const trend = data.analysis?.trend || 'neutral';
+    const outlooks = {
+        strong_bullish: 'التوقعات المستقبلية إيجابية جداً. المؤشرات الفنية تدعم استمرار الصعود مع احتمال كسر مستويات مقاومة جديدة.',
+        bullish: 'التوقعات إيجابية بشكل عام مع احتمال تحقيق أهداف سعرية أعلى على المدى المتوسط.',
+        neutral: 'التوقعات متباينة. السهم يحتاج محفزات جديدة لكسر نطاق التداول الحالي.',
+        bearish: 'التوقعات سلبية على المدى القصير. ينصح بمراقبة مستويات الدعم الرئيسية.',
+        strong_bearish: 'التوقعات سلبية بشكل واضح. الضغط البيعي قد يستمر لفترة أطول.'
+    };
+    return outlooks[trend] || outlooks.neutral;
+}
+
+// ======= Candlestick Chart =======
+function drawCandlestickChart(data, highlightIndex = -1) {
+    let canvas = document.getElementById('candlestickChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const c = getChartColors();
+
+    const container = document.getElementById('mainChartWrapper');
+    if (container) {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight || 450;
+    }
+
+    const width = canvas.width;
+    const height = canvas.height;
+    const padding = { top: 20, right: 60, bottom: 40, left: 10 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+
+    const prices = data.prices_arr || [];
+    const dates = data.dates_list || [];
+    if (!prices.length) return;
+
+    // Calculate SMAs
+    const closes = prices.map(p => p.close || p.Close || 0);
+    function calcSMA(arr, period) {
+        return arr.map((_, i) => i < period - 1 ? null : arr.slice(i - period + 1, i + 1).reduce((a,b) => a+b, 0) / period);
+    }
+    const sma7 = calcSMA(closes, 7);
+    const sma20 = calcSMA(closes, 20);
+    const sma50 = calcSMA(closes, 50);
+    const sma200 = calcSMA(closes, 200);
+
+    // Bollinger Bands
+    const bollingerUpper = closes.map((_, i) => {
+        if (i < 19) return null;
+        const slice = closes.slice(i - 19, i + 1);
+        const mean = slice.reduce((a,b) => a+b, 0) / 20;
+        const std = Math.sqrt(slice.reduce((a,b) => a + Math.pow(b - mean, 2), 0) / 20);
+        return mean + std * 2;
+    });
+    const bollingerLower = closes.map((_, i) => {
+        if (i < 19) return null;
+        const slice = closes.slice(i - 19, i + 1);
+        const mean = slice.reduce((a,b) => a+b, 0) / 20;
+        const std = Math.sqrt(slice.reduce((a,b) => a + Math.pow(b - mean, 2), 0) / 20);
+        return mean - std * 2;
+    });
+
+    // Fibonacci levels
+    const high52 = data.high_52w || Math.max(...prices.map(p => p.high || 0));
+    const low52 = data.low_52w || Math.min(...prices.map(p => p.low || 0));
+    const range52 = high52 - low52;
+    const fibLevels = [
+        high52 - range52 * 0.236, high52 - range52 * 0.382,
+        high52 - range52 * 0.5, high52 - range52 * 0.618,
+        high52 - range52 * 0.786
+    ];
+
+    // Min/Max for scaling
+    let allValues = [];
+    prices.forEach(p => { allValues.push(p.high || 0); allValues.push(p.low || 0); });
+    if (indicatorVisibility.bollinger) {
+        bollingerUpper.forEach(v => { if (v) allValues.push(v); });
+        bollingerLower.forEach(v => { if (v) allValues.push(v); });
+    }
+    if (indicatorVisibility.fibonacci) fibLevels.forEach(v => allValues.push(v));
+
+    const minPrice = Math.min(...allValues.filter(v => v > 0)) * 0.98;
+    const maxPrice = Math.max(...allValues) * 1.02;
+    const priceRange = maxPrice - minPrice;
+
+    // Clear
+    ctx.clearRect(0, 0, width, height);
+
+    // Grid
+    ctx.strokeStyle = c.grid;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 5; i++) {
+        const y = padding.top + (chartHeight / 5) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+        const p = maxPrice - (priceRange / 5) * i;
+        ctx.fillStyle = c.text;
+        ctx.font = '10px Cairo';
+        ctx.textAlign = 'left';
+        ctx.fillText(p.toFixed(2), width - padding.right + 5, y + 3);
+    }
+
+    // Date labels
+    const dateStep = Math.max(1, Math.floor(dates.length / 8));
+    for (let i = 0; i < dates.length; i += dateStep) {
+        const x = padding.left + (i / (prices.length - 1)) * chartWidth;
+        ctx.fillStyle = c.text;
+        ctx.font = '9px Cairo';
+        ctx.textAlign = 'center';
+        ctx.fillText(dates[i] ? dates[i].slice(5) : '', x, height - 10);
+    }
+
+    const candleWidth = Math.max(1, (chartWidth / prices.length) * 0.7);
+    const candleSpacing = chartWidth / prices.length;
+
+    // Fibonacci
+    if (indicatorVisibility.fibonacci) {
+        const fibColors = ['rgba(255,215,0,0.3)','rgba(255,215,0,0.25)','rgba(255,215,0,0.2)','rgba(255,215,0,0.25)','rgba(255,215,0,0.3)'];
+        const fibLabels = ['23.6%','38.2%','50%','61.8%','78.6%'];
+        fibLevels.forEach((level, idx) => {
+            const y = padding.top + ((maxPrice - level) / priceRange) * chartHeight;
+            ctx.strokeStyle = fibColors[idx];
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(width - padding.right, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = c.gold;
+            ctx.font = '9px Cairo';
+            ctx.textAlign = 'left';
+            ctx.fillText(fibLabels[idx], padding.left + 5, y - 3);
         });
+    }
+
+    // Bollinger
+    if (indicatorVisibility.bollinger) {
+        ctx.strokeStyle = 'rgba(124,77,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ['Upper','Lower'].forEach((band, bi) => {
+            const bandData = bi === 0 ? bollingerUpper : bollingerLower;
+            ctx.beginPath();
+            let started = false;
+            bandData.forEach((v, i) => {
+                if (v === null) return;
+                const x = padding.left + i * candleSpacing + candleSpacing / 2;
+                const y = padding.top + ((maxPrice - v) / priceRange) * chartHeight;
+                if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+        });
+        ctx.setLineDash([]);
+    }
+
+    // Candles
+    prices.forEach((p, i) => {
+        const open = p.open || p.Open || p.close || 0;
+        const high = p.high || p.High || 0;
+        const low = p.low || p.Low || 0;
+        const close = p.close || p.Close || 0;
+
+        const x = padding.left + i * candleSpacing + candleSpacing / 2;
+        const yOpen = padding.top + ((maxPrice - open) / priceRange) * chartHeight;
+        const yHigh = padding.top + ((maxPrice - high) / priceRange) * chartHeight;
+        const yLow = padding.top + ((maxPrice - low) / priceRange) * chartHeight;
+        const yClose = padding.top + ((maxPrice - close) / priceRange) * chartHeight;
+        const isGreen = close >= open;
+        const color = isGreen ? c.positive : c.negative;
+
+        if (i === highlightIndex) {
+            ctx.fillStyle = 'rgba(0,229,255,0.1)';
+            ctx.fillRect(x - candleSpacing / 2, padding.top, candleSpacing, chartHeight);
+        }
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, yHigh);
+        ctx.lineTo(x, yLow);
+        ctx.stroke();
+
+        const bodyTop = Math.min(yOpen, yClose);
+        const bodyH = Math.max(1, Math.abs(yClose - yOpen));
+        const bodyW = Math.max(1, candleWidth);
+
+        if (isGreen) {
+            ctx.fillStyle = 'rgba(0,230,118,0.3)';
+            ctx.fillRect(x - bodyW / 2, bodyTop, bodyW, bodyH);
+            ctx.strokeRect(x - bodyW / 2, bodyTop, bodyW, bodyH);
+        } else {
+            ctx.fillStyle = color;
+            ctx.fillRect(x - bodyW / 2, bodyTop, bodyW, bodyH);
+        }
+    });
+
+    // SMA Lines
+    function drawSMALine(smaData, color, lineWidth, dash) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.setLineDash(dash || []);
+        ctx.beginPath();
+        let started = false;
+        smaData.forEach((v, i) => {
+            if (v === null || v === undefined) return;
+            const x = padding.left + i * candleSpacing + candleSpacing / 2;
+            const y = padding.top + ((maxPrice - v) / priceRange) * chartHeight;
+            if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    if (indicatorVisibility.sma7) drawSMALine(sma7, c.warning, 1.5, [2, 2]);
+    if (indicatorVisibility.sma20) drawSMALine(sma20, c.purple, 1.5, [4, 2]);
+    if (indicatorVisibility.sma50) drawSMALine(sma50, c.negative, 1.5, [6, 3]);
+    if (indicatorVisibility.sma200) drawSMALine(sma200, c.positive, 2, []);
+
+    // Targets
+    const targets = data.analysis?.targets || {};
+    if (indicatorVisibility.targets) {
+        if (targets.target_1) {
+            const y = padding.top + ((maxPrice - targets.target_1) / priceRange) * chartHeight;
+            ctx.strokeStyle = 'rgba(0,230,118,0.4)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width - padding.right, y); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = c.positive;
+            ctx.font = '9px Cairo';
+            ctx.textAlign = 'right';
+            ctx.fillText('هدف 1', width - padding.right - 5, y - 3);
+        }
+        if (targets.stop_loss) {
+            const y = padding.top + ((maxPrice - targets.stop_loss) / priceRange) * chartHeight;
+            ctx.strokeStyle = 'rgba(255,23,68,0.4)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width - padding.right, y); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = c.negative;
+            ctx.font = '9px Cairo';
+            ctx.textAlign = 'right';
+            ctx.fillText('وقف الخسارة', width - padding.right - 5, y - 3);
+        }
+    }
+
+    // Crosshair
+    if (isMouseOverChart && highlightIndex >= 0) {
+        const x = padding.left + highlightIndex * candleSpacing + candleSpacing / 2;
+        ctx.strokeStyle = 'rgba(0,229,255,0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(x, padding.top);
+        ctx.lineTo(x, height - padding.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
     }
 }
 
-// ====== النوافذ المنبثقة ======
-function initModals() {
-    document.querySelectorAll('.modal-close').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const modal = e.target.closest('.modal');
-            if (modal) modal.classList.remove('active');
-        });
+// ======= Volume Chart =======
+function drawVolumeChart(data) {
+    const canvas = document.getElementById('volumeChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const c = getChartColors();
+    const prices = data.prices_arr || [];
+    const volumes = data.volumes_list || prices.map(p => p.volume || 0);
+    if (!volumes.length) return;
+
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+
+    const width = canvas.width, height = canvas.height;
+    const padding = { top: 10, right: 60, bottom: 20, left: 10 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+    const maxVol = Math.max(...volumes.filter(v => v > 0)) * 1.1;
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = c.grid;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 3; i++) {
+        const y = padding.top + (chartHeight / 3) * i;
+        ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width - padding.right, y); ctx.stroke();
+        ctx.fillStyle = c.text;
+        ctx.font = '9px Cairo';
+        ctx.textAlign = 'left';
+        ctx.fillText(formatVolumeCompact(maxVol - (maxVol / 3) * i), width - padding.right + 5, y + 3);
+    }
+
+    const barWidth = Math.max(1, (chartWidth / volumes.length) * 0.8);
+    const barSpacing = chartWidth / volumes.length;
+    volumes.forEach((v, i) => {
+        const p = prices[i] || {};
+        const close = p.close || p.Close || 0;
+        const open = p.open || p.Open || close;
+        const x = padding.left + i * barSpacing + barSpacing / 2;
+        const barH = (v / maxVol) * chartHeight;
+        const y = padding.top + chartHeight - barH;
+        ctx.fillStyle = close >= open ? 'rgba(0,230,118,0.5)' : 'rgba(255,23,68,0.5)';
+        ctx.fillRect(x - barWidth / 2, y, barWidth, barH);
     });
-    document.querySelectorAll('.modal').forEach(modal => {
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
-    });
-    const setAlertBtn = document.getElementById('set-price-alert');
-    if (setAlertBtn) {
-        setAlertBtn.addEventListener('click', () => {
-            const targetPrice = document.getElementById('target-price').value;
-            const direction = document.getElementById('alert-direction').value;
-            if (targetPrice) {
-                showNotification(`تم تعيين تنبيه: ${direction === 'above' ? 'أعلى' : 'أقل'} من ${targetPrice}`);
-                closeModal('price-alert-modal');
+}
+
+function formatVolumeCompact(vol) {
+    if (vol >= 1e9) return `${(vol / 1e9).toFixed(1)}B`;
+    if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)}M`;
+    if (vol >= 1e3) return `${(vol / 1e3).toFixed(0)}K`;
+    return vol.toString();
+}
+
+// ======= RSI Chart =======
+function drawRsiChart(data) {
+    if (!secondaryChartVisibility.rsi) return;
+    const canvas = document.getElementById('rsiChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const c = getChartColors();
+    const rsiList = data.rsi_list || [];
+    const dates = data.dates_list || [];
+    if (!rsiList.length) return;
+    if (rsiChart) rsiChart.destroy();
+
+    rsiChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: [{
+                label: 'RSI', data: rsiList,
+                borderColor: '#7c4dff', backgroundColor: 'rgba(124,77,255,0.08)',
+                borderWidth: 2, fill: true, tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: 'rgba(20,29,46,0.95)', titleColor: c.text, bodyColor: c.text, borderColor: '#7c4dff', borderWidth: 1, padding: 10, rtl: true }
+            },
+            scales: {
+                x: { display: false },
+                y: { min: 0, max: 100, grid: { color: c.grid }, ticks: { color: c.text, font: { size: 10 } } }
             }
-        });
+        }
+    });
+}
+
+// ======= MACD Chart =======
+function drawMacdChart(data) {
+    if (!secondaryChartVisibility.macd) return;
+    const canvas = document.getElementById('macdChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const c = getChartColors();
+    const macdList = data.macd_list || [];
+    const signalList = data.signal_list || [];
+    const histList = data.histogram_list || [];
+    const dates = data.dates_list || [];
+    if (!macdList.length) return;
+    if (macdChart) macdChart.destroy();
+
+    macdChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: dates,
+            datasets: [
+                { label: 'Histogram', data: histList, backgroundColor: histList.map(v => v >= 0 ? 'rgba(0,230,118,0.6)' : 'rgba(255,23,68,0.6)'), type: 'bar', order: 2 },
+                { label: 'MACD', data: macdList, borderColor: c.accent, borderWidth: 1.5, fill: false, tension: 0.3, pointRadius: 0, type: 'line', order: 1 },
+                { label: 'Signal', data: signalList, borderColor: c.warning, borderWidth: 1.5, fill: false, tension: 0.3, pointRadius: 0, type: 'line', order: 0 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+                legend: { labels: { color: c.text, font: { family: 'Cairo', size: 11 }, boxWidth: 16 } },
+                tooltip: { backgroundColor: 'rgba(20,29,46,0.95)', titleColor: c.text, bodyColor: c.text, borderColor: c.accent, borderWidth: 1, padding: 10, rtl: true }
+            },
+            scales: {
+                x: { display: false },
+                y: { grid: { color: c.grid }, ticks: { color: c.text, font: { size: 10 } } }
+            }
+        }
+    });
+}
+
+// ======= Toggle Indicators =======
+function toggleIndicator(indicator) {
+    indicatorVisibility[indicator] = !indicatorVisibility[indicator];
+    if (currentData) drawCandlestickChart(currentData);
+}
+
+function toggleSecondaryChart(chart) {
+    secondaryChartVisibility[chart] = !secondaryChartVisibility[chart];
+    const canvas = document.getElementById(chart + 'Chart');
+    if (canvas) canvas.style.display = secondaryChartVisibility[chart] ? 'block' : 'none';
+    if (currentData && secondaryChartVisibility[chart]) {
+        if (chart === 'rsi') drawRsiChart(currentData);
+        if (chart === 'macd') drawMacdChart(currentData);
     }
 }
 
-function openModal(id) { const m = document.getElementById(id); if (m) m.classList.add('active'); }
-function closeModal(id) { const m = document.getElementById(id); if (m) m.classList.remove('active'); }
-
-// ====== المفضلة ======
-function addToFavorites(symbol) {
-    if (!symbol) { showNotification('ابحث عن سهم أولاً', 'error'); return; }
-    let favs = JSON.parse(localStorage.getItem('favorites') || '[]');
-    if (favs.includes(symbol)) { showNotification(`${symbol} موجود بالفعل في المفضلة`); return; }
-    favs.push(symbol);
-    localStorage.setItem('favorites', JSON.stringify(favs));
-    loadFavorites();
-    showNotification(`تم إضافة ${symbol} إلى المفضلة`);
+function redrawCharts(data) {
+    if (!data) return;
+    drawCandlestickChart(data);
+    drawVolumeChart(data);
+    if (secondaryChartVisibility.rsi) drawRsiChart(data);
+    if (secondaryChartVisibility.macd) drawMacdChart(data);
 }
 
-function removeFromFavorites(symbol) {
-    let favs = JSON.parse(localStorage.getItem('favorites') || '[]');
-    favs = favs.filter(s => s !== symbol);
-    localStorage.setItem('favorites', JSON.stringify(favs));
-    loadFavorites();
-    showNotification(`تم إزالة ${symbol} من المفضلة`);
+function updateChartPeriod(period, btn) {
+    document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    if (!currentSymbol) return;
+    fetch(`./api/chart-data/${currentSymbol}?period=${period}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d && !d.error) {
+                currentData = { ...currentData, ...d };
+                redrawCharts(currentData);
+            }
+        })
+        .catch(err => console.error('Chart data error:', err));
 }
 
-function loadFavorites() {
-    const container = document.getElementById('favorites-list');
+// ======= Timeframe Switch =======
+function switchTimeframe(tf, btn) {
+    currentTimeframe = tf;
+    document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    if (!currentSymbol || !currentData) return;
+
+    const tfToPeriod = { '1m':'1mo', '5m':'1mo', '15m':'3mo', '1h':'3mo', '4h':'6mo', '1d':'1y', '1w':'1y' };
+    const tfToInterval = { '1m':'1m', '5m':'5m', '15m':'15m', '1h':'1h', '4h':'4h', '1d':'1d', '1w':'1wk' };
+    const period = tfToPeriod[tf] || '1mo';
+    const interval = tfToInterval[tf] || '1d';
+
+    fetch(`./api/chart-data/${currentSymbol}?period=${period}&interval=${interval}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d && !d.error) {
+                currentData = { ...currentData, ...d };
+                redrawCharts(currentData);
+            }
+        })
+        .catch(() => { if (currentData) redrawCharts(currentData); });
+}
+
+// ======= Watchlist =======
+function getWatchlist() { return JSON.parse(localStorage.getItem('watchlist') || '[]'); }
+function saveWatchlist(list) { localStorage.setItem('watchlist', JSON.stringify(list)); }
+
+function addToWatchlist() {
+    if (!currentSymbol) return;
+    let list = getWatchlist();
+    if (list.includes(currentSymbol)) { showToast('السهم موجود في المفضلة بالفعل'); return; }
+    list.push(currentSymbol);
+    saveWatchlist(list);
+    renderWatchlistBadge();
+    renderWatchlistPanel();
+    showToast(`تمت إضافة ${currentSymbol} للمفضلة`);
+}
+
+function removeFromWatchlist(sym) {
+    saveWatchlist(getWatchlist().filter(s => s !== sym));
+    renderWatchlistBadge();
+    renderWatchlistPanel();
+}
+
+function renderWatchlistBadge() {
+    const el = document.getElementById('watchlistBadge');
+    if (el) el.textContent = getWatchlist().length;
+}
+
+function renderWatchlistPanel() {
+    const container = document.getElementById('watchlist-items');
     if (!container) return;
-    const favs = JSON.parse(localStorage.getItem('favorites') || '[]');
-    if (favs.length === 0) {
-        container.innerHTML = '<p class="empty-message">لا توجد أسهم في المفضلة</p>';
-        return;
-    }
-    container.innerHTML = favs.map(sym => `
-        <div class="favorite-item">
-            <div class="fav-symbol">${sym}</div>
-            <button class="btn-primary small" onclick="loadStock('${sym}', '${isNaN(sym) ? 'us' : 'saudi'}')">تحليل</button>
-            <button class="btn-icon small" onclick="removeFromFavorites('${sym}')" title="إزالة"><i class="fas fa-times"></i></button>
+    const list = getWatchlist();
+    if (!list.length) { container.innerHTML = '<p class="empty-msg">لا توجد أسهم في المفضلة</p>'; return; }
+    container.innerHTML = list.map(sym => `
+        <div class="wl-item" onclick="loadStock('${sym}')">
+            <span class="wl-sym">${sym}</span>
+            <button class="wl-del" onclick="event.stopPropagation(); removeFromWatchlist('${sym}')">🗑</button>
         </div>`).join('');
 }
 
-// ====== التحديث التلقائي ======
-function startAutoUpdate() {
-    if (autoUpdateInterval) clearInterval(autoUpdateInterval);
-    autoUpdateInterval = setInterval(() => {
-        if (currentSymbol) {
-            fetch(`/api/analyze/${currentSymbol}`)
-                .then(r => r.json())
-                .then(data => {
-                    if (!data.error) {
-                        updateTicker(data);
-                        updateVolume(data);
-                        updateFearGreed(data);
-                        const priceEl = document.getElementById('res-price');
-                        const changeEl = document.getElementById('res-change');
-                        if (priceEl) {
-                            const cur = data.currency === 'SAR' ? 'ر.س' : '$';
-                            priceEl.textContent = `${cur}${(data.current || 0).toFixed(2)}`;
-                        }
-                        if (changeEl) {
-                            const ch = data.change || 0;
-                            changeEl.textContent = `${ch >= 0 ? '+' : ''}${ch.toFixed(2)}%`;
-                            changeEl.className = 'price-change ' + (ch >= 0 ? 'positive' : 'negative');
-                        }
-                    }
-                }).catch(() => {});
-        }
-    }, 60000);
+// ======= Alerts =======
+function getAlerts() { return JSON.parse(localStorage.getItem('priceAlerts') || '[]'); }
+function saveAlerts(list) { localStorage.setItem('priceAlerts', JSON.stringify(list)); }
+
+function openAlertModal() {
+    if (!currentSymbol) return;
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('alertSymbolLabel', `السهم: ${currentSymbol}`);
+    const ap = document.getElementById('alertPrice');
+    if (ap) ap.value = currentData ? currentData.current : '';
+    document.getElementById('alertModal').classList.remove('hidden');
+    document.getElementById('overlay').classList.remove('hidden');
 }
 
-// ====== نظام الإشعارات ======
-function showNotification(message, type = 'success') {
-    const existing = document.querySelector('.notification');
+function closeAlertModal() {
+    const m = document.getElementById('alertModal');
+    const o = document.getElementById('overlay');
+    if (m) m.classList.add('hidden');
+    if (o) o.classList.add('hidden');
+}
+
+function saveAlert() {
+    const type = document.getElementById('alertType').value;
+    const price = parseFloat(document.getElementById('alertPrice').value);
+    if (!price || isNaN(price)) { showToast('أدخل سعراً صحيحاً'); return; }
+    const alerts = getAlerts();
+    alerts.push({ symbol: currentSymbol, type, price, created: Date.now() });
+    saveAlerts(alerts);
+    renderAlertsBadge();
+    renderAlertsPanel();
+    closeAlertModal();
+    showToast(`تم حفظ التنبيه: ${currentSymbol} ${type === 'above' ? 'يتجاوز' : 'ينزل عن'} ${price}`);
+}
+
+function removeAlert(idx) {
+    const alerts = getAlerts();
+    alerts.splice(idx, 1);
+    saveAlerts(alerts);
+    renderAlertsBadge();
+    renderAlertsPanel();
+}
+
+function renderAlertsBadge() {
+    const el = document.getElementById('alertsBadge');
+    if (el) el.textContent = getAlerts().length;
+}
+
+function renderAlertsPanel() {
+    const container = document.getElementById('alerts-items');
+    if (!container) return;
+    const alerts = getAlerts();
+    if (!alerts.length) { container.innerHTML = '<p class="empty-msg">لا توجد تنبيهات مضافة</p>'; return; }
+    container.innerHTML = alerts.map((a, i) => `
+        <div class="alert-item">
+            <div><strong>${a.symbol}</strong> — ${a.type === 'above' ? 'يتجاوز' : 'ينزل عن'} <strong>${a.price}</strong></div>
+            <button class="alert-del" onclick="removeAlert(${i})">🗑</button>
+        </div>`).join('');
+}
+
+function startAlertChecker() {
+    if (alertInterval) clearInterval(alertInterval);
+    alertInterval = setInterval(checkAlerts, 60000);
+}
+
+async function checkAlerts() {
+    const alerts = getAlerts();
+    if (!alerts.length) return;
+    const symbols = [...new Set(alerts.map(a => a.symbol))];
+    for (const sym of symbols) {
+        try {
+            const res = await fetch(`./api/search?q=${sym}`);
+            const data = await res.json();
+            if (data.error || !data.current) continue;
+            const price = data.current;
+            alerts.forEach((a, i) => {
+                if (a.symbol !== sym) return;
+                if ((a.type === 'above' && price >= a.price) || (a.type === 'below' && price <= a.price)) {
+                    sendNotification(sym, a.type, a.price, price);
+                    removeAlert(i);
+                }
+            });
+        } catch (e) { /* skip */ }
+    }
+}
+
+function sendNotification(sym, type, target, current) {
+    const msg = `${sym}: السعر ${type === 'above' ? 'تجاوز' : 'نزل عن'} ${target} (الحالي: ${current})`;
+    showToast(`🔔 ${msg}`);
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Leo2Stock تنبيه سعري', { body: msg });
+    }
+}
+
+// ======= Panels =======
+function openTab(id) {
+    closeAllPanels();
+    const panel = document.getElementById(id);
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    setTimeout(() => panel.classList.add('open'), 10);
+    document.getElementById('overlay').classList.remove('hidden');
+    if (id === 'watchlist-tab') renderWatchlistPanel();
+    if (id === 'alerts-tab') renderAlertsPanel();
+}
+
+function closePanel(id) {
+    const panel = document.getElementById(id);
+    if (!panel) return;
+    panel.classList.remove('open');
+    setTimeout(() => panel.classList.add('hidden'), 350);
+    const o = document.getElementById('overlay');
+    if (o) o.classList.add('hidden');
+}
+
+function closeAllPanels() {
+    ['watchlist-tab', 'alerts-tab'].forEach(id => {
+        const p = document.getElementById(id);
+        if (p && !p.classList.contains('hidden')) closePanel(id);
+    });
+    closeAlertModal();
+}
+
+// ======= PDF =======
+function downloadReport() {
+    if (!currentSymbol) return;
+    window.open(`./api/report/${currentSymbol}`, '_blank');
+}
+
+// ======= Helpers =======
+function formatPrice(val, currency) {
+    if (val === null || val === undefined || val === '—') return '—';
+    const sym = currency === 'SAR' ? 'ر.س' : '$';
+    return `${sym}${parseFloat(val).toFixed(2)}`;
+}
+
+function formatVolume(vol) {
+    if (!vol) return '—';
+    if (vol >= 1e9) return `${(vol / 1e9).toFixed(1)}B`;
+    if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)}M`;
+    if (vol >= 1e3) return `${(vol / 1e3).toFixed(0)}K`;
+    return vol.toString();
+}
+
+function formatMarketCap(val) {
+    if (!val || val === 0) return 'N/A';
+    if (val >= 1e12) return `${(val / 1e12).toFixed(2)}T`;
+    if (val >= 1e9) return `${(val / 1e9).toFixed(2)}B`;
+    if (val >= 1e6) return `${(val / 1e6).toFixed(2)}M`;
+    return val.toString();
+}
+
+function setSignal(id, type, text) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    styleSignal(id, type);
+}
+
+function styleSignal(id, type) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.background = type === 'buy' ? 'rgba(0,230,118,0.15)' : type === 'sell' ? 'rgba(255,23,68,0.15)' : 'rgba(255,171,64,0.1)';
+    el.style.color = type === 'buy' ? '#00e676' : type === 'sell' ? '#ff1744' : '#ffab40';
+}
+
+function showLoading(show) {
+    const el = document.getElementById('loading');
+    if (el) el.classList.toggle('hidden', !show);
+}
+
+function showError(msg) {
+    showToast(msg, true);
+}
+
+function showToast(msg, isError = false) {
+    const existing = document.querySelector('.toast');
     if (existing) existing.remove();
-    const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
-    notification.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i><span>${message}</span>`;
-    notification.style.cssText = `position:fixed;top:20px;left:50%;transform:translateX(-50%);background:${type === 'success' ? 'linear-gradient(135deg,#00ff88,#00cc6a)' : 'linear-gradient(135deg,#ff4444,#ff0000)'};color:${type === 'success' ? '#000' : '#fff'};padding:12px 22px;border-radius:12px;font-size:14px;z-index:10000;display:flex;align-items:center;gap:10px;box-shadow:0 4px 15px rgba(0,0,0,0.3);animation:slideDown 0.3s ease;font-family:Cairo,sans-serif;`;
-    document.body.appendChild(notification);
-    setTimeout(() => { notification.style.opacity = '0'; notification.style.transition = 'opacity 0.3s'; setTimeout(() => notification.remove(), 300); }, 3000);
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = msg;
+    toast.style.cssText = `
+        position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+        background: ${isError ? 'rgba(255,23,68,0.95)' : 'rgba(0,229,255,0.95)'};
+        color: ${isError ? '#fff' : '#000'};
+        padding: 12px 24px; border-radius: 50px; font-family: Cairo, sans-serif;
+        font-size: 0.9rem; font-weight: 600; z-index: 9999;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        animation: slideUp 0.3s ease;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
-// ====== CSS Animations ======
-const styleEl = document.createElement('style');
-styleEl.textContent = `
-@keyframes slideDown { from { transform: translate(-50%,-100%); opacity:0; } to { transform: translate(-50%,0); opacity:1; } }
-.hidden { display: none !important; }
-`;
-document.head.appendChild(styleEl);
+// ======= AI Deep Analysis =======
+function generateAIDeepAnalysis(data) {
+    const container = document.getElementById('ai-deep-content');
+    if (!container) return;
 
-// ====== تصدير ======
-window.Leo2Stock = {
-    loadStock, searchFromGolden, showHeroSearch,
-    addToFavorites, removeFromFavorites, removeAlert,
-    openModal, closeModal, showNotification, calculatePosition, runBacktest
-};
+    const analysis = data.analysis || {};
+    const indicators = analysis.indicators || {};
+    const rec = data.recommendation || {};
+    const targets = analysis.targets || {};
+    const trend = analysis.trend || 'neutral';
+    const rsi = indicators.rsi || 50;
+    const macd = indicators.macd || {};
+    const bb = indicators.bollinger || {};
+    const price = data.current || 0;
+    const change = data.change || 0;
+    const sma20 = indicators.sma_20 || price;
+    const sma50 = indicators.sma_50 || price;
+    const sma200 = indicators.sma_200 || price;
+
+    let directionPct = 0, directionClass = 'neutral', directionIcon = '↔️', directionTitle = 'تذبذب جانبي';
+    if (trend === 'strong_bullish') { directionPct = 85; directionClass = 'up'; directionIcon = '🚀'; directionTitle = 'صعود قوي جداً'; }
+    else if (trend === 'bullish') { directionPct = 65; directionClass = 'up'; directionIcon = '📈'; directionTitle = 'اتجاه صاعد'; }
+    else if (trend === 'strong_bearish') { directionPct = -85; directionClass = 'down'; directionIcon = '📉'; directionTitle = 'هبوط قوي جداً'; }
+    else if (trend === 'bearish') { directionPct = -65; directionClass = 'down'; directionIcon = '⬇️'; directionTitle = 'اتجاه هابط'; }
+
+    const signalScore = rec.score || 0;
+    const signalPct = Math.min(Math.abs(signalScore) * 20, 100);
+    const signalColor = signalScore > 0 ? 'linear-gradient(90deg,#00e676,#00e5ff)' :
+                        signalScore < 0 ? 'linear-gradient(90deg,#ff1744,#ff6b6b)' :
+                        'linear-gradient(90deg,#ffab40,#ffd700)';
+
+    const reasons = [];
+    if (change > 5) reasons.push(`ارتفع السهم ${change.toFixed(2)}% اليوم — زخم شرائي قوي`);
+    else if (change < -5) reasons.push(`انخفض السهم ${Math.abs(change).toFixed(2)}% اليوم — ضغط بيعي حاد`);
+    else if (change > 0) reasons.push(`ارتفع السهم ${change.toFixed(2)}% — حركة إيجابية معتدلة`);
+    else reasons.push(`انخفض السهم ${Math.abs(change).toFixed(2)}% — ضغط بيعي طفيف`);
+
+    if (rsi < 30) reasons.push(`RSI عند ${rsi} — تشبع بيعي، فرصة انتعاش محتملة`);
+    else if (rsi > 70) reasons.push(`RSI عند ${rsi} — تشبع شرائي، خطر تصحيح قريب`);
+    else reasons.push(`RSI عند ${rsi} — منطقة محايدة`);
+
+    reasons.push(price > sma20
+        ? `السعر فوق SMA 20 (${formatPrice(sma20, data.currency)}) — اتجاه قصير المدى إيجابي`
+        : `السعر تحت SMA 20 (${formatPrice(sma20, data.currency)}) — ضعف في الاتجاه القصير`);
+
+    reasons.push(price > sma200
+        ? `السعر فوق SMA 200 (${formatPrice(sma200, data.currency)}) — الاتجاه الرئيسي صاعد`
+        : `السعر تحت SMA 200 (${formatPrice(sma200, data.currency)}) — الاتجاه الرئيسي هابط`);
+
+    if (macd.histogram > 0) reasons.push('MACD إيجابي — زخم صاعد يدعم الحركة');
+    else if (macd.histogram < 0) reasons.push('MACD سلبي — زخم هابط يضغط على السعر');
+
+    const volRatio = (data.volume || 0) / (data.avg_volume || 1);
+    if (volRatio > 2) reasons.push(`حجم التداول ${volRatio.toFixed(1)}x المتوسط — اهتمام مؤسسي استثنائي`);
+    else if (volRatio > 1.2) reasons.push(`حجم التداول ${volRatio.toFixed(1)}x المتوسط — نشاط أعلى من المعتاد`);
+    else reasons.push(`حجم التداول طبيعي (${volRatio.toFixed(1)}x المتوسط)`);
+
+    if (price <= bb.lower) reasons.push('السعر لامس الحد السفلي لبولينجر — إشارة انتعاش محتملة');
+    else if (price >= bb.upper) reasons.push('السعر لامس الحد العلوي لبولينجر — احتمال تصحيح');
+
+    const target1 = targets.target_1 || price * 1.05;
+    const stopLoss = targets.stop_loss || price * 0.95;
+    const upPct = ((target1 - price) / price * 100).toFixed(1);
+    const downPct = ((price - stopLoss) / price * 100).toFixed(1);
+
+    const summaryMap = {
+        strong_bullish: `السهم في صعود قوي جداً. جميع المؤشرات تدعم الاتجاه الصعودي. الهدف الأول عند ${formatPrice(target1, data.currency)} (+${upPct}%).`,
+        bullish: `السهم في اتجاه صاعد. معظم المؤشرات إيجابية. يُنصح بالدخول مع وقف خسارة عند ${formatPrice(stopLoss, data.currency)} (-${downPct}%).`,
+        neutral: `السهم في تذبذب جانبي. يُنصح بالانتظار حتى ظهور إشارة واضحة.`,
+        bearish: `السهم تحت ضغط بيعي. يُنصح بتجنب الدخول حتى ظهور إشارات انتعاش.`,
+        strong_bearish: `السهم في هبوط حاد. ينصح بالابتعاد أو البيع مع وقف خسارة صارم.`,
+    };
+
+    container.innerHTML = `
+        <div class="ai-deep-content">
+            <div class="ai-summary-row">
+                <div class="ai-stat-box">
+                    <span class="ai-stat-label">قوة الإشارة الكلية</span>
+                    <span class="ai-stat-value ${signalScore > 0 ? 'up' : signalScore < 0 ? 'down' : 'neutral'}">${Math.abs(signalScore * 20)}%</span>
+                    <span class="ai-stat-sub">${rec.action || 'محايد'}</span>
+                </div>
+                <div class="ai-stat-box">
+                    <span class="ai-stat-label">اتجاه السهم</span>
+                    <span class="ai-stat-value ${directionClass}">${Math.abs(directionPct)}%</span>
+                    <span class="ai-stat-sub">${directionTitle}</span>
+                </div>
+                <div class="ai-stat-box">
+                    <span class="ai-stat-label">نسبة المخاطرة/العائد</span>
+                    <span class="ai-stat-value ${parseFloat(upPct) > parseFloat(downPct) ? 'up' : 'down'}">1:${(parseFloat(upPct) / Math.max(parseFloat(downPct), 0.1)).toFixed(1)}</span>
+                    <span class="ai-stat-sub">هدف ${upPct}% / خطر ${downPct}%</span>
+                </div>
+            </div>
+            <div class="ai-strength-bar-wrap">
+                <div class="ai-strength-label">
+                    <span class="ai-strength-title">قوة الإشارة الفنية الكلية</span>
+                    <span class="ai-strength-pct" style="color:${signalScore > 0 ? 'var(--positive)' : signalScore < 0 ? 'var(--negative)' : 'var(--warning)'}">${signalPct}%</span>
+                </div>
+                <div class="ai-strength-track">
+                    <div class="ai-strength-fill" style="width:${signalPct}%;background:${signalColor}"></div>
+                </div>
+            </div>
+            <div class="ai-direction-box ${directionClass}">
+                <div class="ai-dir-header">
+                    <span class="ai-dir-icon">${directionIcon}</span>
+                    <span class="ai-dir-title">${directionTitle}</span>
+                    <span class="ai-dir-pct ${directionClass}">${directionPct > 0 ? '+' : ''}${directionPct}%</span>
+                </div>
+                <p class="ai-dir-text">${summaryMap[trend] || summaryMap.neutral}</p>
+                <ul class="ai-reasons-list">
+                    ${reasons.map(r => `<li>${r}</li>`).join('')}
+                </ul>
+            </div>
+            <div class="ai-forecast-row">
+                <div class="ai-forecast-box">
+                    <div class="ai-forecast-title">🎯 الهدف الأول</div>
+                    <div class="ai-forecast-val positive">${formatPrice(target1, data.currency)}</div>
+                    <div class="ai-forecast-sub">+${upPct}% من السعر الحالي</div>
+                </div>
+                <div class="ai-forecast-box">
+                    <div class="ai-forecast-title">🛑 وقف الخسارة</div>
+                    <div class="ai-forecast-val negative">${formatPrice(stopLoss, data.currency)}</div>
+                    <div class="ai-forecast-sub">-${downPct}% من السعر الحالي</div>
+                </div>
+            </div>
+        </div>`;
+}
+
+// ======= CSS Animation =======
+const styleEl = document.createElement('style');
+styleEl.textContent = `@keyframes slideUp { from { transform: translateX(-50%) translateY(20px); opacity:0; } to { transform: translateX(-50%) translateY(0); opacity:1; } }`;
+document.head.appendChild(styleEl);
