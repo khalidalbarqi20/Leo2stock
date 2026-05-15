@@ -4,42 +4,34 @@ from datetime import datetime, timedelta
 class TechnicalAnalyzer:
 
     def _get_closes(self, prices):
-        """استخراج قائمة الأسعار من أي نوع بيانات"""
-        close_col = prices['Close']
-        if hasattr(close_col, 'iloc'):
-            try:
-                iloc_obj = close_col.iloc
-                if hasattr(iloc_obj, '__iter__'):
-                    return list(close_col)
-            except:
-                pass
-        if hasattr(close_col, '_d'):
-            return list(close_col._d)
-        return list(close_col)
+        col = prices['Close']
+        if hasattr(col, '_d'):
+            return list(col._d)
+        return list(col)
 
     def _get_highs(self, prices):
-        high_col = prices['High']
-        if hasattr(high_col, '_d'):
-            return list(high_col._d)
-        return list(high_col)
+        col = prices['High']
+        if hasattr(col, '_d'):
+            return list(col._d)
+        return list(col)
 
     def _get_lows(self, prices):
-        low_col = prices['Low']
-        if hasattr(low_col, '_d'):
-            return list(low_col._d)
-        return list(low_col)
+        col = prices['Low']
+        if hasattr(col, '_d'):
+            return list(col._d)
+        return list(col)
 
     def _get_opens(self, prices):
-        open_col = prices['Open']
-        if hasattr(open_col, '_d'):
-            return list(open_col._d)
-        return list(open_col)
+        col = prices['Open']
+        if hasattr(col, '_d'):
+            return list(col._d)
+        return list(col)
 
     def _get_volumes(self, prices):
-        vol_col = prices['Volume']
-        if hasattr(vol_col, '_d'):
-            return list(vol_col._d)
-        return list(vol_col)
+        col = prices['Volume']
+        if hasattr(col, '_d'):
+            return list(col._d)
+        return list(col)
 
     def _get_last_close(self, prices):
         closes = self._get_closes(prices)
@@ -170,18 +162,14 @@ class TechnicalAnalyzer:
         }
 
     def calculate_fibonacci(self, prices):
-        """حساب مستويات فيبوناتشي"""
         closes = self._get_closes(prices)
         if not closes:
             return {}
-
         highs = self._get_highs(prices)
         lows = self._get_lows(prices)
-
         high = max(highs) if highs else max(closes)
         low = min(lows) if lows else min(closes)
         range_val = high - low
-
         return {
             '0': round(high, 2),
             '23.6': round(high - range_val * 0.236, 2),
@@ -214,34 +202,31 @@ class TechnicalAnalyzer:
     def _calculate_macd_series(self, closes):
         ema12 = self._ema_list(closes, 12)
         ema26 = self._ema_list(closes, 26)
-        macd_line = [e12 - e26 for e12, e26 in zip(ema12, ema26)]
+        min_len = min(len(ema12), len(ema26))
+        macd_line = [ema12[i] - ema26[i] for i in range(min_len)]
         signal_line = self._ema_list(macd_line, 9)
-        hist = [m - s for m, s in zip(macd_line[-len(signal_line):], signal_line)]
-
-        macd_padded = [0] * (len(closes) - len(macd_line)) + macd_line
-        signal_padded = [0] * (len(closes) - len(signal_line)) + signal_line
-        hist_padded = [0] * (len(closes) - len(hist)) + hist
-
+        offset = len(macd_line) - len(signal_line)
+        histogram = [macd_line[i + offset] - signal_line[i] for i in range(len(signal_line))]
+        pad_macd = [None] * (len(closes) - len(macd_line))
+        pad_signal = [None] * (len(closes) - len(signal_line))
+        pad_hist = [None] * (len(closes) - len(histogram))
         return {
-            'macd': macd_padded,
-            'signal': signal_padded,
-            'histogram': hist_padded
+            'macd': pad_macd + macd_line,
+            'signal': pad_signal + signal_line,
+            'histogram': pad_hist + histogram
         }
 
     def _calculate_sma_series(self, closes, period):
-        sma = []
+        result = []
         for i in range(len(closes)):
-            if i >= period - 1:
-                sma.append(sum(closes[i - period + 1:i + 1]) / period)
+            if i < period - 1:
+                result.append(None)
             else:
-                sma.append(None)
-        return sma
+                result.append(round(sum(closes[i - period + 1:i + 1]) / period, 4))
+        return result
 
     def get_chart_data(self, prices):
         closes = self._get_closes(prices)
-        if not closes:
-            return {}
-
         opens = self._get_opens(prices)
         highs = self._get_highs(prices)
         lows = self._get_lows(prices)
@@ -250,7 +235,7 @@ class TechnicalAnalyzer:
         sma20 = self._calculate_sma_series(closes, 20)
         sma50 = self._calculate_sma_series(closes, 50)
         sma200 = self._calculate_sma_series(closes, 200)
-        rsi = self._calculate_rsi_series(closes, 14)
+        rsi = self._calculate_rsi_series(closes)
         macd_data = self._calculate_macd_series(closes)
 
         return {
@@ -269,79 +254,46 @@ class TechnicalAnalyzer:
         }
 
     def calculate_targets(self, prices, indicators):
-        """حساب الأهداف المتوقعة والدعوم"""
         closes = self._get_closes(prices)
         highs = self._get_highs(prices)
         lows = self._get_lows(prices)
         current = closes[-1] if closes else 0
-
         bb = indicators.get('bollinger', {})
         atr = indicators.get('atr', 0)
-        sma20 = indicators.get('sma_20', current)
-        sma50 = indicators.get('sma_50', current)
-        sma200 = indicators.get('sma_200', current)
 
-        # الدعوم (آخر 20 قاع)
         recent_lows = sorted(lows[-20:]) if len(lows) >= 20 else sorted(lows)
-        supports = []
-        if len(recent_lows) >= 4:
-            supports = [
-                round(recent_lows[0], 2),
-                round(recent_lows[1], 2),
-                round(recent_lows[2], 2),
-                round(recent_lows[3], 2),
-            ]
-        elif recent_lows:
-            supports = [round(min(recent_lows), 2)] * 4
-        else:
-            supports = [round(current * 0.95, 2)] * 4
+        supports = [round(recent_lows[i], 2) for i in range(min(4, len(recent_lows)))]
+        while len(supports) < 4:
+            supports.append(round(current * 0.95, 2))
 
-        # الأهداف (آخر 20 قمة)
         recent_highs = sorted(highs[-20:], reverse=True) if len(highs) >= 20 else sorted(highs, reverse=True)
-        targets = []
-        if len(recent_highs) >= 4:
-            targets = [
-                round(recent_highs[0], 2),
-                round(recent_highs[1], 2),
-                round(recent_highs[2], 2),
-                round(recent_highs[3], 2),
-            ]
-        elif recent_highs:
-            targets = [round(max(recent_highs), 2)] * 4
-        else:
-            targets = [round(current * 1.05, 2)] * 4
+        targets = [round(recent_highs[i], 2) for i in range(min(4, len(recent_highs)))]
+        while len(targets) < 4:
+            targets.append(round(current * 1.05, 2))
 
-        # وقف الخسارة
         stop_loss = round(supports[0] - atr * 1.5, 2) if atr > 0 else round(supports[0] * 0.98, 2)
 
-        # تحسين الأهداف باستخدام Bollinger
         if bb.get('upper'):
             targets[0] = max(targets[0], round(bb['upper'], 2))
         if bb.get('middle'):
             targets[1] = max(targets[1], round(bb['middle'] + (bb.get('upper', bb['middle']) - bb['middle']) * 0.5, 2))
 
-        # ترتيب الأهداف تصاعدياً
         targets = sorted(set(targets), reverse=True)
         while len(targets) < 4:
             targets.append(round(targets[-1] * 1.02, 2) if targets else round(current * 1.05, 2))
         targets = targets[:4]
 
         return {
-            'target_1': targets[0],
-            'target_2': targets[1],
-            'target_3': targets[2],
-            'target_4': targets[3],
+            'target_1': targets[0], 'target_2': targets[1],
+            'target_3': targets[2], 'target_4': targets[3],
             'stop_loss': stop_loss,
-            'support_1': supports[0],
-            'support_2': supports[1],
-            'support_3': supports[2],
-            'support_4': supports[3],
+            'support_1': supports[0], 'support_2': supports[1],
+            'support_3': supports[2], 'support_4': supports[3],
         }
 
     def full_analysis(self, prices):
         indicators = self.calculate_all(prices)
         current = self._get_last_close(prices)
-
         sma20 = indicators['sma_20']
         sma50 = indicators['sma_50']
         sma200 = indicators['sma_200']
@@ -384,14 +336,10 @@ class TechnicalAnalyzer:
         fundamental_reason = self._get_fundamental_reason(trend, indicators, current, support, resistance)
 
         return {
-            'indicators': indicators,
-            'trend': trend,
-            'support': support,
-            'resistance': resistance,
-            'signals': signals,
-            'current_price': round(current, 2),
-            'fundamental_reason': fundamental_reason,
-            'targets': targets,
+            'indicators': indicators, 'trend': trend,
+            'support': support, 'resistance': resistance,
+            'signals': signals, 'current_price': round(current, 2),
+            'fundamental_reason': fundamental_reason, 'targets': targets,
         }
 
     def _get_fundamental_reason(self, trend, indicators, current, support, resistance):
@@ -399,7 +347,6 @@ class TechnicalAnalyzer:
         macd = indicators['macd']
         bb = indicators['bollinger']
         stoch = indicators['stochastic']
-
         reasons = []
 
         if trend in ['strong_bullish', 'bullish']:
@@ -411,12 +358,8 @@ class TechnicalAnalyzer:
                 reasons.append('السعر فوق متوسط بولينجر يعكس قوة الشراء')
             if stoch['k'] > 50:
                 reasons.append('المؤشر العشوائي يؤكد الزخم الصعودي')
-            return {
-                'direction': 'up',
-                'title': 'أسباب الارتفاع',
-                'reasons': reasons,
-                'summary': 'السهم في اتجاه صعودي مدعوم بمؤشرات فنية إيجابية'
-            }
+            return {'direction': 'up', 'title': 'أسباب الارتفاع', 'reasons': reasons,
+                    'summary': 'السهم في اتجاه صعودي مدعوم بمؤشرات فنية إيجابية'}
         elif trend in ['strong_bearish', 'bearish']:
             if rsi < 50 and rsi > 30:
                 reasons.append('الزخم البيعي مستمر مع RSI في منطقة سلبية')
@@ -426,23 +369,15 @@ class TechnicalAnalyzer:
                 reasons.append('السعر تحت متوسط بولينجر يعكس ضغط البيع')
             if stoch['k'] < 50:
                 reasons.append('المؤشر العشوائي يؤكد الزخم الهبوطي')
-            return {
-                'direction': 'down',
-                'title': 'أسباب الهبوط',
-                'reasons': reasons,
-                'summary': 'السهم في اتجاه هبوطي مدعوم بمؤشرات فنية سلبية'
-            }
+            return {'direction': 'down', 'title': 'أسباب الهبوط', 'reasons': reasons,
+                    'summary': 'السهم في اتجاه هبوطي مدعوم بمؤشرات فنية سلبية'}
         else:
             if abs(rsi - 50) < 10:
                 reasons.append('RSI محايد يعكس توازن بين الشراء والبيع')
             if abs(macd['histogram']) < 0.5:
                 reasons.append('MACD ضعيف يعكس غياب اتجاه واضح')
-            return {
-                'direction': 'neutral',
-                'title': 'الوضع الحالي',
-                'reasons': reasons,
-                'summary': 'السهم في منطقة محايدة بانتظار محفزات جديدة'
-            }
+            return {'direction': 'neutral', 'title': 'الوضع الحالي', 'reasons': reasons,
+                    'summary': 'السهم في منطقة محايدة بانتظار محفزات جديدة'}
 
     def get_recommendation(self, analysis):
         trend = analysis['trend']
