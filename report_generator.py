@@ -17,14 +17,12 @@ class ReportGenerator:
 
     def create_chart(self, prices, symbol):
         plt.figure(figsize=(10, 6))
-        
-        # استخراج البيانات من FakeDF
-        closes = list(prices['Close'])
+        col = prices['Close']
+        closes = list(col._d) if hasattr(col, '_d') else list(col)
         dates = list(range(len(closes)))
-        
+
         plt.plot(dates, closes, label='Price', color='blue', linewidth=2)
-        
-        # SMA 20
+
         sma20 = []
         for i in range(len(closes)):
             if i >= 19:
@@ -32,8 +30,7 @@ class ReportGenerator:
             else:
                 sma20.append(None)
         plt.plot(dates, sma20, label='SMA 20', color='orange', alpha=0.7)
-        
-        # SMA 50
+
         sma50 = []
         for i in range(len(closes)):
             if i >= 49:
@@ -41,7 +38,7 @@ class ReportGenerator:
             else:
                 sma50.append(None)
         plt.plot(dates, sma50, label='SMA 50', color='red', alpha=0.7)
-        
+
         plt.title(f'{symbol} - Technical Chart')
         plt.xlabel('Date')
         plt.ylabel('Price')
@@ -61,14 +58,9 @@ class ReportGenerator:
         story = []
         styles = getSampleStyleSheet()
 
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#1a237e'),
-            spaceAfter=30,
-            alignment=TA_CENTER
-        )
+        title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'],
+                                     fontSize=24, textColor=colors.HexColor('#1a237e'),
+                                     spaceAfter=30, alignment=TA_CENTER)
 
         story.append(Paragraph("Technical Analysis Report", title_style))
         story.append(Paragraph(f"{data['name']} ({symbol})", title_style))
@@ -105,7 +97,8 @@ class ReportGenerator:
         indicators = analysis['indicators']
         ind_data = [
             ['Indicator', 'Value', 'Signal'],
-            ['RSI (14)', indicators['rsi'], 'Oversold' if indicators['rsi'] < 30 else 'Overbought' if indicators['rsi'] > 70 else 'Neutral'],
+            ['RSI (14)', indicators['rsi'],
+             'Oversold' if indicators['rsi'] < 30 else 'Overbought' if indicators['rsi'] > 70 else 'Neutral'],
             ['SMA 20', indicators['sma_20'], ''],
             ['SMA 50', indicators['sma_50'], ''],
             ['SMA 200', indicators['sma_200'], ''],
@@ -125,7 +118,9 @@ class ReportGenerator:
         story.append(Spacer(1, 20))
 
         rec = analysis.get('recommendation', {})
-        rec_color = colors.HexColor('#4caf50') if 'Buy' in str(rec.get('action', '')) else colors.HexColor('#f44336') if 'Sell' in str(rec.get('action', '')) else colors.HexColor('#9e9e9e')
+        rec_color = colors.HexColor('#4caf50') if 'شراء' in str(rec.get('action', '')) else \
+                    colors.HexColor('#f44336') if 'بيع' in str(rec.get('action', '')) else \
+                    colors.HexColor('#9e9e9e')
         story.append(Paragraph("Recommendation", styles['Heading2']))
         story.append(Paragraph(f"<b>{rec.get('action', 'Neutral')}</b>",
                               ParagraphStyle('Rec', parent=styles['Normal'],
@@ -146,6 +141,5 @@ class ReportGenerator:
         story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
                               ParagraphStyle('Footer', parent=styles['Normal'],
                                            fontSize=8, textColor=colors.gray, alignment=TA_CENTER)))
-
         doc.build(story)
         return filename
