@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>مراقب الفرص — Leo2Stock</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark">
+
+<!-- شاشة تسجيل الدخول بالتوكن — تظهر فقط إذا ما فيه توكن محفوظ -->
+<div id="authGate" class="auth-gate">
+    <div class="auth-card">
+        <div class="auth-logo">◈ مراقب الفرص</div>
+        <p class="auth-hint">أدخل مفتاح الدخول (Token) اللي أصدره لك الأدمن</p>
+        <input type="text" id="tokenInput" placeholder="Token" autocomplete="off" dir="ltr">
+        <button id="tokenSubmit">دخول</button>
+        <p class="auth-error" id="authError"></p>
+    </div>
+</div>
+
+<div id="app" class="dash-app" style="display:none">
+
+    <!-- شريط حالة السوق -->
+    <header class="market-bar" id="marketBar">
+        <div class="market-pill" id="pillSaudi">
+            <span class="flag">🇸🇦</span>
+            <span class="m-name">السوق السعودي</span>
+            <span class="m-state" id="saudiState">—</span>
+        </div>
+        <div class="market-pill" id="pillUs">
+            <span class="flag">🇺🇸</span>
+            <span class="m-name">السوق الأمريكي</span>
+            <span class="m-state" id="usState">—</span>
+        </div>
+    </header>
+
+    <div class="data-notice" id="dataNotice">
+        الفترة الزمنية المدعومة حالياً: <strong>يومي (1D)</strong> فقط · المصدر: Yahoo Finance (بيانات متأخرة)
+    </div>
+
+    <main class="dash-main">
+
+        <!-- ملخص الفرص -->
+        <section class="section">
+            <h2 class="section-title">ملخص اليوم</h2>
+            <div class="stat-row" id="statRow">
+                <div class="stat-card"><div class="stat-num" id="statToday">—</div><div class="stat-label">إشارات اليوم</div></div>
+                <div class="stat-card accent"><div class="stat-num" id="statHigh">—</div><div class="stat-label">درجة عالية (75+)</div></div>
+                <div class="stat-card"><div class="stat-num" id="statActive">—</div><div class="stat-label">إعدادات نشطة</div></div>
+                <div class="stat-card good"><div class="stat-num" id="statConfirmed">—</div><div class="stat-label">مؤكدة</div></div>
+                <div class="stat-card bad"><div class="stat-num" id="statInvalidated">—</div><div class="stat-label">أُبطلت اليوم</div></div>
+            </div>
+        </section>
+
+        <!-- أفضل الفرص -->
+        <section class="section">
+            <h2 class="section-title">أفضل الفرص</h2>
+            <div id="topOpportunities" class="opp-list"></div>
+        </section>
+
+        <!-- الاستراتيجيات النشطة -->
+        <section class="section">
+            <h2 class="section-title">الاستراتيجيات (مباشر)</h2>
+            <div id="strategiesList" class="strategy-list"></div>
+        </section>
+
+        <!-- قائمة المراقبة -->
+        <section class="section">
+            <h2 class="section-title">قائمة المراقبة</h2>
+            <div id="watchlist" class="watch-list"></div>
+        </section>
+
+        <!-- آخر التنبيهات -->
+        <section class="section">
+            <h2 class="section-title">آخر التنبيهات</h2>
+            <div id="latestAlerts" class="alerts-list"></div>
+        </section>
+
+        <p class="last-refresh" id="lastRefresh"></p>
+    </main>
+
+    <!-- شريط تنقل سفلي (جوال) — يتحول Sidebar بالشاشات الكبيرة -->
+    <nav class="bottom-nav">
+        <a href="/dashboard" class="nav-item active"><span class="nav-icon">🏠</span><span>الرئيسية</span></a>
+        <a href="/scanner" class="nav-item"><span class="nav-icon">🔎</span><span>الفاحص</span></a>
+        <a href="#" class="nav-item soon" data-name="الاستراتيجيات"><span class="nav-icon">🎯</span><span>الاستراتيجيات</span></a>
+        <a href="#" class="nav-item soon" data-name="التنبيهات"><span class="nav-icon">🔔</span><span>التنبيهات</span></a>
+        <a href="#" class="nav-item soon" data-name="الإعدادات" id="settingsNav"><span class="nav-icon">👤</span><span>الإعدادات</span></a>
+    </nav>
+
+    <div class="toast" id="toast"></div>
+</div>
+
+<script src="{{ url_for('static', filename='common.js') }}"></script>
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>

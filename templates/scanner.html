@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>الفاحص — Leo2Stock</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='scanner.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark">
+
+<div id="authGate" class="auth-gate">
+    <div class="auth-card">
+        <div class="auth-logo">◈ الفاحص</div>
+        <p class="auth-hint">أدخل مفتاح الدخول (Token)</p>
+        <input type="text" id="tokenInput" placeholder="Token" autocomplete="off" dir="ltr">
+        <button id="tokenSubmit">دخول</button>
+        <p class="auth-error" id="authError"></p>
+    </div>
+</div>
+
+<div id="app" class="dash-app" style="display:none">
+
+    <div class="data-notice">
+        الفترة الزمنية المدعومة حالياً: <strong>يومي (1D)</strong> فقط · المصدر: Yahoo Finance (بيانات متأخرة)
+    </div>
+
+    <main class="dash-main">
+
+        <!-- تصنيف حسب نوع الشروط الفعلية بالاستراتيجية -->
+        <div class="tabs" id="typeTabs">
+            <button class="tab active" data-type="all">الكل</button>
+            <button class="tab" data-type="fibonacci">فيبوناتشي</button>
+            <button class="tab" data-type="rsi">RSI</button>
+            <button class="tab" data-type="macd">MACD</button>
+            <button class="tab" data-type="breakout">اختراق</button>
+            <button class="tab" data-type="custom">مخصص</button>
+        </div>
+
+        <!-- لوحة البحث عن فرص (فحص حي عبر الباك إند فقط) -->
+        <section class="section">
+            <h2 class="section-title">ابحث عن فرص</h2>
+            <div class="find-panel">
+                <label>السوق
+                    <select id="marketSelect">
+                        <option value="saudi">السوق السعودي</option>
+                        <option value="us" selected>السوق الأمريكي</option>
+                    </select>
+                </label>
+                <label>الاستراتيجية
+                    <select id="strategySelect"><option value="">— اختر استراتيجية —</option></select>
+                </label>
+                <label>الحد الأدنى للدرجة
+                    <input type="number" id="minScoreInput" value="70" min="0" max="100">
+                </label>
+                <button id="scanBtn" disabled>فحص الآن</button>
+            </div>
+            <p class="scan-note" id="scanNote"></p>
+            <div id="scanResults" class="opp-list"></div>
+        </section>
+
+        <!-- تصفح الإشارات المحفوظة (بدون تشغيل فحص جديد) -->
+        <section class="section">
+            <div class="section-title-row">
+                <h2 class="section-title">كل الإشارات</h2>
+                <select id="statusFilter">
+                    <option value="">كل الحالات</option>
+                    <option value="ACTIVE">نشطة</option>
+                    <option value="CONFIRMED">مؤكدة</option>
+                    <option value="INVALIDATED">مُبطلة</option>
+                    <option value="CLOSED">مغلقة</option>
+                </select>
+            </div>
+            <div id="allSignals" class="opp-list"></div>
+        </section>
+
+    </main>
+
+    <nav class="bottom-nav">
+        <a href="/dashboard" class="nav-item"><span class="nav-icon">🏠</span><span>الرئيسية</span></a>
+        <a href="/scanner" class="nav-item active"><span class="nav-icon">🔎</span><span>الفاحص</span></a>
+        <a href="#" class="nav-item soon" data-name="الاستراتيجيات"><span class="nav-icon">🎯</span><span>الاستراتيجيات</span></a>
+        <a href="#" class="nav-item soon" data-name="التنبيهات"><span class="nav-icon">🔔</span><span>التنبيهات</span></a>
+        <a href="#" class="nav-item soon" data-name="الإعدادات" id="settingsNav"><span class="nav-icon">👤</span><span>الإعدادات</span></a>
+    </nav>
+
+    <div class="toast" id="toast"></div>
+</div>
+
+<script src="{{ url_for('static', filename='common.js') }}"></script>
+<script src="{{ url_for('static', filename='scanner.js') }}"></script>
+</body>
+</html>
